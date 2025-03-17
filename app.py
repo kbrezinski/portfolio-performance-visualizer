@@ -11,6 +11,10 @@ import numpy as np
 import os
 import tempfile
 import requests
+import pytz
+
+# Configure yfinance settings
+yf.pdr_override()
 
 # Set cache dir to a writable location in Streamlit Cloud
 os.environ['TMPDIR'] = '/tmp'
@@ -168,21 +172,32 @@ def get_portfolio_data(portfolio, start_date, end_date):
         portfolio_data = pd.DataFrame()
         valid_symbols = []
         
+        # Convert dates to timezone-aware
+        start_date = pd.Timestamp(start_date).tz_localize('UTC')
+        end_date = pd.Timestamp(end_date).tz_localize('UTC')
+        
         # Fetch data for each symbol
         for symbol, weight in portfolio.items():
             if weight > 0:  # Only fetch data for symbols with positive weights
                 try:
-                    # Use download with minimal parameters
-                    hist = yf.download(
-                        symbol,
+                    # Create Ticker object and validate it first
+                    ticker = yf.Ticker(symbol)
+                    
+                    # Get history with explicit timezone handling
+                    hist = ticker.history(
                         start=start_date,
                         end=end_date,
-                        progress=False,
-                        ignore_tz=True,  # Add this parameter
-                        timeout=5  # Add timeout
+                        interval='1d',
+                        auto_adjust=True
                     )
                     
                     if not hist.empty and 'Close' in hist.columns and len(hist) > 0:
+                        # Ensure timezone consistency
+                        if hist.index.tz is None:
+                            hist.index = hist.index.tz_localize('UTC')
+                        else:
+                            hist.index = hist.index.tz_convert('UTC')
+                            
                         # Calculate daily returns
                         returns = hist['Close'].pct_change()
                         portfolio_data[symbol] = returns
@@ -194,31 +209,28 @@ def get_portfolio_data(portfolio, start_date, end_date):
                     st.warning(f"Network error fetching data for {symbol}: {str(e)}")
                 except Exception as e:
                     st.warning(f"Error processing {symbol}: {str(e)}")
+                    st.write(f"Debug - Error details for {symbol}: {type(e).__name__} - {str(e)}")
         
         if not valid_symbols:
             st.warning("No valid data was fetched for any symbols in the portfolio")
             return None
             
-        # Drop first row (NaN from pct_change) and any other NaN values
         portfolio_data = portfolio_data.dropna()
         
         if portfolio_data.empty:
             st.warning("No valid data remains after removing NaN values")
             return None
             
-        # Recalculate weights for valid symbols only
         total_weight = sum(portfolio[symbol] for symbol in valid_symbols)
         if total_weight == 0:
             st.warning("No valid symbols with weights greater than 0")
             return None
             
-        # Calculate weighted returns
         weighted_returns = pd.Series(0.0, index=portfolio_data.index)
         for symbol in valid_symbols:
-            weight = portfolio[symbol] / total_weight  # Normalize weights
+            weight = portfolio[symbol] / total_weight
             weighted_returns += portfolio_data[symbol] * weight
         
-        # Calculate cumulative returns
         cumulative_returns = (1 + weighted_returns).cumprod()
         
         return cumulative_returns
