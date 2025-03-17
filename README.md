@@ -34,7 +34,7 @@ A web-based tool built with Streamlit that allows users to compare the performan
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/portfolio-performance-visualizer.git
+git clone https://github.com/kbrezinski/portfolio-performance-visualizer.git
 cd portfolio-performance-visualizer
 ```
 
