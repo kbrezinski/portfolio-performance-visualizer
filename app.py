@@ -8,6 +8,11 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
+import os
+import tempfile
+
+# Configure yfinance cache
+yf.set_tz_cache_location(tempfile.gettempdir())
 
 # Set page config
 st.set_page_config(
@@ -166,8 +171,15 @@ def get_portfolio_data(portfolio, start_date, end_date):
         for symbol, weight in portfolio.items():
             if weight > 0:  # Only fetch data for symbols with positive weights
                 try:
-                    stock = yf.Ticker(symbol)
-                    hist = stock.history(start=start_date, end=end_date, interval='1d')
+                    # Use download instead of Ticker for more reliable data fetching
+                    hist = yf.download(
+                        symbol,
+                        start=start_date,
+                        end=end_date,
+                        progress=False,
+                        show_errors=False
+                    )
+                    
                     if not hist.empty and 'Close' in hist.columns:
                         # Calculate daily returns
                         returns = hist['Close'].pct_change()
