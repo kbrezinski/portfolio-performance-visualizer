@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 import os
 import tempfile
+import requests
 
 # Configure yfinance cache
 yf.set_tz_cache_location(tempfile.gettempdir())
@@ -171,30 +172,42 @@ def get_portfolio_data(portfolio, start_date, end_date):
         for symbol, weight in portfolio.items():
             if weight > 0:  # Only fetch data for symbols with positive weights
                 try:
-                    # Use download instead of Ticker for more reliable data fetching
-                    hist = yf.download(
-                        symbol,
+                    # Create a Ticker object
+                    ticker = yf.Ticker(symbol)
+                    
+                    # Try to get some basic info first to validate the symbol
+                    try:
+                        info = ticker.info
+                        if info is None or 'regularMarketPrice' not in info:
+                            st.warning(f"Invalid symbol or no data available: {symbol}")
+                            continue
+                    except:
+                        st.warning(f"Could not validate symbol: {symbol}")
+                        continue
+                    
+                    # Fetch historical data
+                    hist = ticker.history(
                         start=start_date,
                         end=end_date,
-                        progress=False,
-                        auto_adjust=True,  # Automatically adjust prices for splits and dividends
-                        interval='1d'
+                        interval='1d',
+                        auto_adjust=True
                     )
                     
-                    if not hist.empty and 'Close' in hist.columns:
+                    if not hist.empty and 'Close' in hist.columns and len(hist) > 0:
                         # Calculate daily returns
                         returns = hist['Close'].pct_change()
                         portfolio_data[symbol] = returns
                         valid_symbols.append(symbol)
-                        st.write(f"Successfully fetched data for {symbol}: {len(hist)} rows")  # Debug info
+                        st.write(f"Successfully fetched data for {symbol}: {len(hist)} rows")
                     else:
-                        st.warning(f"No data available for {symbol} (Empty DataFrame)")
+                        st.warning(f"No price data available for {symbol}")
+                except requests.exceptions.RequestException as e:
+                    st.warning(f"Network error fetching data for {symbol}: {str(e)}")
                 except Exception as e:
-                    st.warning(f"Error fetching data for {symbol}: {str(e)}")
-                    st.write(f"Debug - Error type: {type(e).__name__}")  # Debug info
+                    st.warning(f"Error processing {symbol}: {str(e)}")
         
-        if portfolio_data.empty:
-            st.warning("No data was fetched for any symbols in the portfolio")
+        if not valid_symbols:
+            st.warning("No valid data was fetched for any symbols in the portfolio")
             return None
             
         # Drop first row (NaN from pct_change) and any other NaN values
@@ -219,10 +232,15 @@ def get_portfolio_data(portfolio, start_date, end_date):
         # Calculate cumulative returns
         cumulative_returns = (1 + weighted_returns).cumprod()
         
+        # Add debug information
+        st.write("Debug Information:")
+        st.write(f"Valid symbols: {valid_symbols}")
+        st.write(f"Data points per symbol: {[len(portfolio_data[sym].dropna()) for sym in valid_symbols]}")
+        
         return cumulative_returns
     except Exception as e:
         st.error(f"Error processing portfolio data: {str(e)}")
-        st.write(f"Debug - Error type: {type(e).__name__}")  # Debug info
+        st.write(f"Debug - Error type: {type(e).__name__}")
         return None
 
 # Main content
