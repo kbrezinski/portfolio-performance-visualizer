@@ -1,42 +1,29 @@
-# Fix for yfinance cache
-import appdirs as ad
-ad.user_cache_dir = lambda *args: "/tmp"
-
 import streamlit as st
 import yfinance as yf
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
 import pandas as pd
+from datetime import datetime, timedelta
 import numpy as np
-import os
-import tempfile
-import requests
-import pytz
+import time
 
-# Configure yfinance settings
-yf.pdr_override()
-
-# Set cache dir to a writable location in Streamlit Cloud
-os.environ['TMPDIR'] = '/tmp'
-
-# Set page config
+# Configure page
 st.set_page_config(
-    page_title="Portfolio Performance Visualizer",
+    page_title="Portfolio Visualizer",
     page_icon="📈",
     layout="wide"
 )
 
-# Add custom CSS
+# Custom CSS
 st.markdown("""
     <style>
     .main {
         padding: 2rem;
     }
     .stTitle {
-        font-size: 3rem !important;
+        font-size: 2.5rem !important;
         color: #1E88E5;
     }
-    .portfolio-editor {
+    .portfolio-section {
         background-color: #f8f9fa;
         padding: 1rem;
         border-radius: 0.5rem;
@@ -45,34 +32,24 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state for portfolios if not exists
+# Initialize session state
 if 'benchmark_portfolio' not in st.session_state:
     st.session_state.benchmark_portfolio = {
-        "XIU.TO": 0.35,  # iShares S&P/TSX 60 Index ETF
-        "VFV.TO": 0.65,  # Vanguard S&P500 Index ETF
-        "ZAG.TO": 0.00   # BMO Aggregate Bond Index ETF
+        "XIU.TO": 0.35,
+        "VFV.TO": 0.65
     }
 
 if 'custom_portfolio' not in st.session_state:
     st.session_state.custom_portfolio = {
-        "AVDV": 0.08,    # Avantis International Small Cap Value ETF
-        "AVUV": 0.08,    # Avantis U.S. Small Cap Value ETF
-        "VUN.TO": 0.25,  # Vanguard U.S.Total Market Index ETF
-        "XEC.TO": 0.10,  # BlackRock Canada iShares Core
-        "XEF.TO": 0.20,  # BlackRock Canada iShares Core
-        "XIC.TO": 0.29   # BlackRock iShares Core S&P/TSX Capped Composite Index ETF
+        "VUN.TO": 0.40,
+        "XEF.TO": 0.30,
+        "XIC.TO": 0.30
     }
 
-if 'custom_portfolio2' not in st.session_state:
-    st.session_state.custom_portfolio2 = {}
-
-if 'custom_portfolio3' not in st.session_state:
-    st.session_state.custom_portfolio3 = {}
-
 # Title
-st.title("📈 Portfolio Performance Visualizer")
+st.title("📈 Portfolio Visualizer")
 
-# Time period selection in sidebar
+# Sidebar settings
 st.sidebar.header("Settings")
 time_periods = {
     "1 Month": 30,
@@ -89,27 +66,93 @@ selected_period = st.sidebar.selectbox(
     index=3  # Default to 1 Year
 )
 
-# Function to validate and normalize portfolio weights
-def normalize_weights(portfolio):
-    total = sum(weight for weight in portfolio.values() if weight is not None)
-    if total == 0:
-        return portfolio
-    return {symbol: (weight/total if weight is not None else 0) for symbol, weight in portfolio.items()}
-
-# Function to create portfolio input fields
-def portfolio_input_section(portfolio_name, default_portfolio):
-    st.markdown(f"<div class='portfolio-editor'>", unsafe_allow_html=True)
-    st.subheader(f"{portfolio_name} Composition")
+def fetch_stock_data(symbol, start_date, end_date, retries=3):
+    """
+    Fetch stock data with retries and proper error handling
+    """
+    for attempt in range(retries):
+        try:
+            data = yf.download(
+                symbol,
+                start=start_date,
+                end=end_date,
+                progress=False
+            )
+            
+            if not data.empty and 'Close' in data.columns:
+                return data
+            
+            time.sleep(1)  # Wait before retry
+            
+        except Exception as e:
+            if attempt == retries - 1:
+                st.warning(f"Failed to fetch data for {symbol} after {retries} attempts: {str(e)}")
+                return None
+            time.sleep(1)  # Wait before retry
     
-    # Initialize empty portfolio
+    return None
+
+@st.cache_data(ttl=300)
+def get_portfolio_data(portfolio, start_date, end_date):
+    """
+    Fetch and process portfolio data with improved error handling
+    """
+    if not portfolio:
+        return None
+    
+    try:
+        all_data = {}
+        valid_symbols = []
+        
+        # Fetch data for each symbol
+        for symbol, weight in portfolio.items():
+            if weight > 0:
+                data = fetch_stock_data(symbol, start_date, end_date)
+                
+                if data is not None and not data.empty:
+                    all_data[symbol] = data
+                    valid_symbols.append(symbol)
+                    st.info(f"Successfully fetched data for {symbol}")
+        
+        if not valid_symbols:
+            st.warning("No valid data was fetched for any symbols")
+            return None
+        
+        # Calculate portfolio returns
+        portfolio_returns = pd.Series(dtype=float)
+        total_weight = sum(portfolio[symbol] for symbol in valid_symbols)
+        
+        for symbol in valid_symbols:
+            weight = portfolio[symbol] / total_weight
+            returns = all_data[symbol]['Close'].pct_change()
+            
+            if portfolio_returns.empty:
+                portfolio_returns = returns * weight
+            else:
+                portfolio_returns = portfolio_returns.add(returns * weight, fill_value=0)
+        
+        # Calculate cumulative returns
+        cumulative_returns = (1 + portfolio_returns).cumprod()
+        return cumulative_returns
+    
+    except Exception as e:
+        st.error(f"Error processing portfolio data: {str(e)}")
+        return None
+
+def portfolio_editor(portfolio_name, default_portfolio):
+    """
+    Create portfolio input section
+    """
+    st.markdown(f"<div class='portfolio-section'>", unsafe_allow_html=True)
+    st.subheader(f"{portfolio_name}")
+    
     portfolio = {}
     total_weight = 0
     
-    # Create 10 rows of single column inputs
-    for i in range(10):
+    # Create input fields
+    for i in range(5):  # Limit to 5 symbols for simplicity
         col1, col2 = st.columns([3, 1])
         
-        # Symbol and weight inputs
         default_symbol = list(default_portfolio.keys())[i] if i < len(default_portfolio) else ""
         default_weight = list(default_portfolio.values())[i] if i < len(default_portfolio) else 0.0
         
@@ -131,129 +174,42 @@ def portfolio_input_section(portfolio_name, default_portfolio):
         if symbol and weight > 0:
             portfolio[symbol] = weight / 100
             total_weight += weight
-
-    # Show total weight
+    
     st.markdown(f"**Total Weight: {total_weight:.1f}%**")
-    if total_weight != 100:
+    if abs(total_weight - 100) > 0.1:
         st.warning("Total weight should be 100%")
     
     st.markdown("</div>", unsafe_allow_html=True)
-    
-    # Normalize weights
-    return normalize_weights(portfolio)
-
-# Function to safely calculate returns
-def safe_calculate_returns(df):
-    if df is None or df.empty:
-        return None
-    try:
-        # Calculate daily returns
-        returns = df['Close'].pct_change()
-        # Drop NaN values
-        returns = returns.dropna()
-        if len(returns) == 0:
-            return None
-        # Calculate cumulative returns
-        cumulative_returns = (1 + returns).cumprod()
-        return cumulative_returns
-    except Exception as e:
-        st.error(f"Error calculating returns: {str(e)}")
-        return None
-
-# Function to fetch and process portfolio data
-@st.cache_data(ttl=300)  # Cache data for 5 minutes
-def get_portfolio_data(portfolio, start_date, end_date):
-    """Fetch and process portfolio data"""
-    if not portfolio:  # If portfolio is empty
-        return None
-        
-    try:
-        # Initialize DataFrame for storing daily returns
-        portfolio_data = pd.DataFrame()
-        valid_symbols = []
-        
-        # Convert dates to timezone-aware
-        start_date = pd.Timestamp(start_date).tz_localize('UTC')
-        end_date = pd.Timestamp(end_date).tz_localize('UTC')
-        
-        # Fetch data for each symbol
-        for symbol, weight in portfolio.items():
-            if weight > 0:  # Only fetch data for symbols with positive weights
-                try:
-                    # Create Ticker object and validate it first
-                    ticker = yf.Ticker(symbol)
-                    
-                    # Get history with explicit timezone handling
-                    hist = ticker.history(
-                        start=start_date,
-                        end=end_date,
-                        progress=False,
-                        show_errors=False
-                    )
-                    
-                    if not hist.empty and 'Close' in hist.columns and len(hist) > 0:
-                        # Ensure timezone consistency
-                        if hist.index.tz is None:
-                            hist.index = hist.index.tz_localize('UTC')
-                        else:
-                            hist.index = hist.index.tz_convert('UTC')
-                            
-                        # Calculate daily returns
-                        returns = hist['Close'].pct_change()
-                        portfolio_data[symbol] = returns
-                        valid_symbols.append(symbol)
-                    else:
-                        st.warning(f"No data available for {symbol}")
-                except Exception as e:
-                    st.warning(f"Error fetching data for {symbol}: {str(e)}")
-        
-        if portfolio_data.empty:
-            return None
-            
-        portfolio_data = portfolio_data.dropna()
-        
-        if portfolio_data.empty:
-            st.warning("No valid data remains after removing NaN values")
-            return None
-            
-        total_weight = sum(portfolio[symbol] for symbol in valid_symbols)
-        if total_weight == 0:
-            st.warning("No valid symbols with weights greater than 0")
-            return None
-            
-        weighted_returns = pd.Series(0.0, index=portfolio_data.index)
-        for symbol in valid_symbols:
-            weight = portfolio[symbol] / total_weight
-            weighted_returns += portfolio_data[symbol] * weight
-        
-        cumulative_returns = (1 + weighted_returns).cumprod()
-        
-        return cumulative_returns
-    except Exception as e:
-        st.error(f"Error processing portfolio data: {str(e)}")
-        return None
+    return {k: v/total_weight*100 if total_weight > 0 else v for k, v in portfolio.items()}
 
 # Main content
 try:
-    # Get dates
     end_date = datetime.now()
     start_date = end_date - timedelta(days=time_periods[selected_period])
     
-    # Show loading state
+    # Portfolio editors
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.session_state.benchmark_portfolio = portfolio_editor(
+            "Benchmark Portfolio",
+            st.session_state.benchmark_portfolio
+        )
+    
+    with col2:
+        st.session_state.custom_portfolio = portfolio_editor(
+            "Custom Portfolio",
+            st.session_state.custom_portfolio
+        )
+    
+    # Fetch and display data
     with st.spinner("Loading portfolio data..."):
-        # Get portfolio returns
         benchmark_returns = get_portfolio_data(st.session_state.benchmark_portfolio, start_date, end_date)
         custom_returns = get_portfolio_data(st.session_state.custom_portfolio, start_date, end_date)
-        custom_returns2 = get_portfolio_data(st.session_state.custom_portfolio2, start_date, end_date)
-        custom_returns3 = get_portfolio_data(st.session_state.custom_portfolio3, start_date, end_date)
         
-        # Create comparison plot if we have any valid data
-        if benchmark_returns is not None or custom_returns is not None or \
-           custom_returns2 is not None or custom_returns3 is not None:
-            
+        if benchmark_returns is not None or custom_returns is not None:
             fig = go.Figure()
             
-            # Add portfolio lines only if they have valid data
             if benchmark_returns is not None:
                 fig.add_trace(go.Scatter(
                     x=benchmark_returns.index,
@@ -266,30 +222,13 @@ try:
                 fig.add_trace(go.Scatter(
                     x=custom_returns.index,
                     y=custom_returns,
-                    name='Custom Portfolio 1',
+                    name='Custom Portfolio',
                     line=dict(color='#ff7f0e')
                 ))
             
-            if custom_returns2 is not None and not custom_returns2.empty:
-                fig.add_trace(go.Scatter(
-                    x=custom_returns2.index,
-                    y=custom_returns2,
-                    name='Custom Portfolio 2',
-                    line=dict(color='#2ca02c')
-                ))
-            
-            if custom_returns3 is not None and not custom_returns3.empty:
-                fig.add_trace(go.Scatter(
-                    x=custom_returns3.index,
-                    y=custom_returns3,
-                    name='Custom Portfolio 3',
-                    line=dict(color='#d62728')
-                ))
-            
-            # Update layout
             fig.update_layout(
                 title=f"Portfolio Performance Comparison ({selected_period})",
-                yaxis_title="Cumulative Return (1 = Initial Investment)",
+                yaxis_title="Cumulative Return",
                 xaxis_title="Date",
                 template="plotly_white",
                 height=600,
@@ -298,66 +237,29 @@ try:
             
             st.plotly_chart(fig, use_container_width=True)
             
-            # Calculate and display performance metrics
+            # Performance metrics
             st.subheader("Performance Metrics")
-            metrics_cols = st.columns(4)
+            col1, col2 = st.columns(2)
             
-            # Helper function to safely display metrics
-            def display_metric(returns, name, col, benchmark_return=None):
+            def display_metrics(returns, name, col):
                 if returns is not None and len(returns) > 0:
-                    total_return = (returns.iloc[-1] - 1) * 100
-                    delta = None if benchmark_return is None else f"{(total_return - benchmark_return):.2f}%"
-                    col.metric(name, f"{total_return:.2f}%", delta)
+                    try:
+                        total_return = float(returns.iloc[-1] - 1) * 100
+                        col.metric(name, f"{total_return:,.2f}%")
+                    except Exception as e:
+                        col.metric(name, "Error calculating")
+                        st.warning(f"Error calculating {name} metrics: {str(e)}")
                 else:
-                    col.metric(name, "No data", None)
+                    col.metric(name, "No data")
             
-            # Display metrics for each portfolio
-            benchmark_return = None
-            if benchmark_returns is not None and len(benchmark_returns) > 0:
-                benchmark_return = (benchmark_returns.iloc[-1] - 1) * 100
-            
-            display_metric(benchmark_returns, "Benchmark Portfolio", metrics_cols[0])
-            display_metric(custom_returns, "Custom Portfolio 1", metrics_cols[1], benchmark_return)
-            display_metric(custom_returns2, "Custom Portfolio 2", metrics_cols[2], benchmark_return)
-            display_metric(custom_returns3, "Custom Portfolio 3", metrics_cols[3], benchmark_return)
+            display_metrics(benchmark_returns, "Benchmark Portfolio", col1)
+            display_metrics(custom_returns, "Custom Portfolio", col2)
         
         else:
-            st.warning("No valid data available for any portfolio. Please check your portfolio compositions and try again.")
-        
-        # Portfolio editors
-        st.header("Portfolio Management")
-        
-        # Create four columns for portfolio editors
-        portfolio_cols = st.columns(4)
-        
-        # Portfolio input sections in columns
-        with portfolio_cols[0]:
-            st.session_state.benchmark_portfolio = portfolio_input_section(
-                "Benchmark Portfolio",
-                st.session_state.benchmark_portfolio
-            )
-
-        with portfolio_cols[1]:
-            st.session_state.custom_portfolio = portfolio_input_section(
-                "Custom Portfolio 1",
-                st.session_state.custom_portfolio
-            )
-        
-        with portfolio_cols[2]:
-            st.session_state.custom_portfolio2 = portfolio_input_section(
-                "Custom Portfolio 2",
-                st.session_state.custom_portfolio2
-            )
-        
-        with portfolio_cols[3]:
-            st.session_state.custom_portfolio3 = portfolio_input_section(
-                "Custom Portfolio 3",
-                st.session_state.custom_portfolio3
-            )
+            st.warning("No valid data available. Please check your portfolio compositions and try again.")
 
 except Exception as e:
     st.error(f"An unexpected error occurred: {str(e)}")
-    st.error("Stack trace:", exc_info=True)
 
 # Footer
 st.markdown("---")
