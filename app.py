@@ -187,8 +187,8 @@ def get_portfolio_data(portfolio, start_date, end_date):
                     hist = ticker.history(
                         start=start_date,
                         end=end_date,
-                        interval='1d',
-                        auto_adjust=True
+                        progress=False,
+                        show_errors=False
                     )
                     
                     if not hist.empty and 'Close' in hist.columns and len(hist) > 0:
@@ -202,17 +202,12 @@ def get_portfolio_data(portfolio, start_date, end_date):
                         returns = hist['Close'].pct_change()
                         portfolio_data[symbol] = returns
                         valid_symbols.append(symbol)
-                        st.write(f"Successfully fetched data for {symbol}: {len(hist)} rows")
                     else:
-                        st.warning(f"No price data available for {symbol}")
-                except requests.exceptions.RequestException as e:
-                    st.warning(f"Network error fetching data for {symbol}: {str(e)}")
+                        st.warning(f"No data available for {symbol}")
                 except Exception as e:
-                    st.warning(f"Error processing {symbol}: {str(e)}")
-                    st.write(f"Debug - Error details for {symbol}: {type(e).__name__} - {str(e)}")
+                    st.warning(f"Error fetching data for {symbol}: {str(e)}")
         
-        if not valid_symbols:
-            st.warning("No valid data was fetched for any symbols in the portfolio")
+        if portfolio_data.empty:
             return None
             
         portfolio_data = portfolio_data.dropna()
@@ -236,7 +231,6 @@ def get_portfolio_data(portfolio, start_date, end_date):
         return cumulative_returns
     except Exception as e:
         st.error(f"Error processing portfolio data: {str(e)}")
-        st.write(f"Debug - Error type: {type(e).__name__}")
         return None
 
 # Main content
