@@ -187,22 +187,7 @@ try:
     end_date = datetime.now()
     start_date = end_date - timedelta(days=time_periods[selected_period])
     
-    # Portfolio editors
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.session_state.benchmark_portfolio = portfolio_editor(
-            "Benchmark Portfolio",
-            st.session_state.benchmark_portfolio
-        )
-    
-    with col2:
-        st.session_state.custom_portfolio = portfolio_editor(
-            "Custom Portfolio",
-            st.session_state.custom_portfolio
-        )
-    
-    # Fetch and display data
+    # Fetch and display data first
     with st.spinner("Loading portfolio data..."):
         benchmark_returns = get_portfolio_data(st.session_state.benchmark_portfolio, start_date, end_date)
         custom_returns = get_portfolio_data(st.session_state.custom_portfolio, start_date, end_date)
@@ -239,12 +224,15 @@ try:
             
             # Performance metrics
             st.subheader("Performance Metrics")
-            col1, col2 = st.columns(2)
+            metric_col1, metric_col2 = st.columns(2)
             
             def display_metrics(returns, name, col):
                 if returns is not None and len(returns) > 0:
                     try:
-                        total_return = float(returns.iloc[-1] - 1) * 100
+                        final_value = returns.iloc[-1]
+                        if isinstance(final_value, (pd.Series, pd.DataFrame)):
+                            final_value = final_value.iloc[0]
+                        total_return = (float(final_value) - 1) * 100
                         col.metric(name, f"{total_return:,.2f}%")
                     except Exception as e:
                         col.metric(name, "Error calculating")
@@ -252,11 +240,27 @@ try:
                 else:
                     col.metric(name, "No data")
             
-            display_metrics(benchmark_returns, "Benchmark Portfolio", col1)
-            display_metrics(custom_returns, "Custom Portfolio", col2)
+            display_metrics(benchmark_returns, "Benchmark Portfolio", metric_col1)
+            display_metrics(custom_returns, "Custom Portfolio", metric_col2)
+    
+    # Portfolio editors moved below the plot
+    st.subheader("Portfolio Configuration")
+    portfolio_col1, portfolio_col2 = st.columns(2)
+    
+    with portfolio_col1:
+        st.session_state.benchmark_portfolio = portfolio_editor(
+            "Benchmark Portfolio",
+            st.session_state.benchmark_portfolio
+        )
+    
+    with portfolio_col2:
+        st.session_state.custom_portfolio = portfolio_editor(
+            "Custom Portfolio",
+            st.session_state.custom_portfolio
+        )
         
-        else:
-            st.warning("No valid data available. Please check your portfolio compositions and try again.")
+    if benchmark_returns is None and custom_returns is None:
+        st.warning("No valid data available. Please check your portfolio compositions and try again.")
 
 except Exception as e:
     st.error(f"An unexpected error occurred: {str(e)}")
