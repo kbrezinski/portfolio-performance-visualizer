@@ -41,9 +41,12 @@ if 'benchmark_portfolio' not in st.session_state:
 
 if 'custom_portfolio' not in st.session_state:
     st.session_state.custom_portfolio = {
-        "VUN.TO": 0.40,
-        "XEF.TO": 0.30,
-        "XIC.TO": 0.30
+        "AVDV": 0.08,
+        "AVUV": 0.08,
+        "VUN.TO": 0.25,
+        "XEC.TO": 0.10,
+        "XEF.TO": 0.20,
+        "XIC.TO": 0.29
     }
 
 # Title
@@ -72,23 +75,42 @@ def fetch_stock_data(symbol, start_date, end_date, retries=3):
     """
     for attempt in range(retries):
         try:
-            data = yf.download(
-                symbol,
-                start=start_date,
-                end=end_date,
-                progress=False
-            )
+            # Add a small delay between retries
+            if attempt > 0:
+                time.sleep(2)
             
-            if not data.empty and 'Close' in data.columns:
-                return data
+            # Try different symbol formats for Canadian stocks
+            if symbol.endswith('.TO'):
+                variations = [
+                    symbol,
+                    f"TSX:{symbol[:-3]}",
+                    symbol[:-3]
+                ]
+            else:
+                variations = [symbol]
             
-            time.sleep(1)  # Wait before retry
+            for var in variations:
+                try:
+                    data = yf.download(
+                        var,
+                        start=start_date,
+                        end=end_date,
+                        progress=False,
+                        timeout=10
+                    )
+                    
+                    if not data.empty and 'Close' in data.columns and len(data) > 0:
+                        st.success(f"Successfully fetched data for {symbol}")
+                        return data
+                except Exception:
+                    continue
+            
+            st.warning(f"Attempt {attempt + 1} failed for {symbol}")
             
         except Exception as e:
             if attempt == retries - 1:
                 st.warning(f"Failed to fetch data for {symbol} after {retries} attempts: {str(e)}")
                 return None
-            time.sleep(1)  # Wait before retry
     
     return None
 
@@ -105,14 +127,17 @@ def get_portfolio_data(portfolio, start_date, end_date):
         valid_symbols = []
         
         # Fetch data for each symbol
-        for symbol, weight in portfolio.items():
-            if weight > 0:
-                data = fetch_stock_data(symbol, start_date, end_date)
-                
-                if data is not None and not data.empty:
-                    all_data[symbol] = data
-                    valid_symbols.append(symbol)
-                    st.info(f"Successfully fetched data for {symbol}")
+        total_symbols = len([s for s, w in portfolio.items() if w > 0])
+        with st.progress(0.0) as progress_bar:
+            for i, (symbol, weight) in enumerate(portfolio.items(), 1):
+                if weight > 0:
+                    data = fetch_stock_data(symbol, start_date, end_date)
+                    progress_bar.progress(i / total_symbols)
+                    
+                    if data is not None and not data.empty:
+                        all_data[symbol] = data
+                        valid_symbols.append(symbol)
+                        st.info(f"Processing data for {symbol} ({len(data)} rows)")
         
         if not valid_symbols:
             st.warning("No valid data was fetched for any symbols")
