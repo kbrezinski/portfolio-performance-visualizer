@@ -177,7 +177,8 @@ def get_portfolio_data(portfolio, start_date, end_date):
                         start=start_date,
                         end=end_date,
                         progress=False,
-                        show_errors=False
+                        auto_adjust=True,  # Automatically adjust prices for splits and dividends
+                        interval='1d'
                     )
                     
                     if not hist.empty and 'Close' in hist.columns:
@@ -185,23 +186,28 @@ def get_portfolio_data(portfolio, start_date, end_date):
                         returns = hist['Close'].pct_change()
                         portfolio_data[symbol] = returns
                         valid_symbols.append(symbol)
+                        st.write(f"Successfully fetched data for {symbol}: {len(hist)} rows")  # Debug info
                     else:
-                        st.warning(f"No data available for {symbol}")
+                        st.warning(f"No data available for {symbol} (Empty DataFrame)")
                 except Exception as e:
                     st.warning(f"Error fetching data for {symbol}: {str(e)}")
+                    st.write(f"Debug - Error type: {type(e).__name__}")  # Debug info
         
         if portfolio_data.empty:
+            st.warning("No data was fetched for any symbols in the portfolio")
             return None
             
         # Drop first row (NaN from pct_change) and any other NaN values
         portfolio_data = portfolio_data.dropna()
         
         if portfolio_data.empty:
+            st.warning("No valid data remains after removing NaN values")
             return None
             
         # Recalculate weights for valid symbols only
         total_weight = sum(portfolio[symbol] for symbol in valid_symbols)
         if total_weight == 0:
+            st.warning("No valid symbols with weights greater than 0")
             return None
             
         # Calculate weighted returns
@@ -216,6 +222,7 @@ def get_portfolio_data(portfolio, start_date, end_date):
         return cumulative_returns
     except Exception as e:
         st.error(f"Error processing portfolio data: {str(e)}")
+        st.write(f"Debug - Error type: {type(e).__name__}")  # Debug info
         return None
 
 # Main content
