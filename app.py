@@ -12,8 +12,8 @@ import os
 import tempfile
 import requests
 
-# Configure yfinance cache
-yf.set_tz_cache_location(tempfile.gettempdir())
+# Set cache dir to a writable location in Streamlit Cloud
+os.environ['TMPDIR'] = '/tmp'
 
 # Set page config
 st.set_page_config(
@@ -172,25 +172,14 @@ def get_portfolio_data(portfolio, start_date, end_date):
         for symbol, weight in portfolio.items():
             if weight > 0:  # Only fetch data for symbols with positive weights
                 try:
-                    # Create a Ticker object
-                    ticker = yf.Ticker(symbol)
-                    
-                    # Try to get some basic info first to validate the symbol
-                    try:
-                        info = ticker.info
-                        if info is None or 'regularMarketPrice' not in info:
-                            st.warning(f"Invalid symbol or no data available: {symbol}")
-                            continue
-                    except:
-                        st.warning(f"Could not validate symbol: {symbol}")
-                        continue
-                    
-                    # Fetch historical data
-                    hist = ticker.history(
+                    # Use download with minimal parameters
+                    hist = yf.download(
+                        symbol,
                         start=start_date,
                         end=end_date,
-                        interval='1d',
-                        auto_adjust=True
+                        progress=False,
+                        ignore_tz=True,  # Add this parameter
+                        timeout=5  # Add timeout
                     )
                     
                     if not hist.empty and 'Close' in hist.columns and len(hist) > 0:
@@ -231,11 +220,6 @@ def get_portfolio_data(portfolio, start_date, end_date):
         
         # Calculate cumulative returns
         cumulative_returns = (1 + weighted_returns).cumprod()
-        
-        # Add debug information
-        st.write("Debug Information:")
-        st.write(f"Valid symbols: {valid_symbols}")
-        st.write(f"Data points per symbol: {[len(portfolio_data[sym].dropna()) for sym in valid_symbols]}")
         
         return cumulative_returns
     except Exception as e:
