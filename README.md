@@ -2,7 +2,7 @@
 
 A web-based tool built with Streamlit that allows users to compare the performance of multiple investment portfolios against a benchmark portfolio. The application fetches real-time data from Yahoo Finance and provides interactive visualizations of portfolio performance.
 
-![Portfolio Visualizer Demo](demo_screenshot.png)
+![Portfolio Visualizer Demo](demo_screenshot.jpg)
 
 ## Features
 

@@ -128,39 +128,78 @@ def portfolio_input_section(portfolio_name, default_portfolio):
     # Normalize weights
     return normalize_weights(portfolio)
 
+# Function to safely calculate returns
+def safe_calculate_returns(df):
+    if df is None or df.empty:
+        return None
+    try:
+        # Calculate daily returns
+        returns = df['Close'].pct_change()
+        # Drop NaN values
+        returns = returns.dropna()
+        if len(returns) == 0:
+            return None
+        # Calculate cumulative returns
+        cumulative_returns = (1 + returns).cumprod()
+        return cumulative_returns
+    except Exception as e:
+        st.error(f"Error calculating returns: {str(e)}")
+        return None
+
 # Function to fetch and process portfolio data
 @st.cache_data(ttl=300)  # Cache data for 5 minutes
 def get_portfolio_data(portfolio, start_date, end_date):
     """Fetch and process portfolio data"""
+    if not portfolio:  # If portfolio is empty
+        return None
+        
     try:
         # Initialize DataFrame for storing daily returns
         portfolio_data = pd.DataFrame()
+        valid_symbols = []
         
         # Fetch data for each symbol
         for symbol, weight in portfolio.items():
             if weight > 0:  # Only fetch data for symbols with positive weights
-                stock = yf.Ticker(symbol)
-                hist = stock.history(start=start_date, end=end_date, interval='1d')
-                if not hist.empty:
-                    # Calculate daily returns
-                    returns = hist['Close'].pct_change()
-                    portfolio_data[symbol] = returns
+                try:
+                    stock = yf.Ticker(symbol)
+                    hist = stock.history(start=start_date, end=end_date, interval='1d')
+                    if not hist.empty and 'Close' in hist.columns:
+                        # Calculate daily returns
+                        returns = hist['Close'].pct_change()
+                        portfolio_data[symbol] = returns
+                        valid_symbols.append(symbol)
+                    else:
+                        st.warning(f"No data available for {symbol}")
+                except Exception as e:
+                    st.warning(f"Error fetching data for {symbol}: {str(e)}")
         
-        # Drop first row (NaN from pct_change)
+        if portfolio_data.empty:
+            return None
+            
+        # Drop first row (NaN from pct_change) and any other NaN values
         portfolio_data = portfolio_data.dropna()
         
+        if portfolio_data.empty:
+            return None
+            
+        # Recalculate weights for valid symbols only
+        total_weight = sum(portfolio[symbol] for symbol in valid_symbols)
+        if total_weight == 0:
+            return None
+            
         # Calculate weighted returns
         weighted_returns = pd.Series(0.0, index=portfolio_data.index)
-        for symbol, weight in portfolio.items():
-            if symbol in portfolio_data.columns:
-                weighted_returns += portfolio_data[symbol] * weight
+        for symbol in valid_symbols:
+            weight = portfolio[symbol] / total_weight  # Normalize weights
+            weighted_returns += portfolio_data[symbol] * weight
         
         # Calculate cumulative returns
         cumulative_returns = (1 + weighted_returns).cumprod()
         
         return cumulative_returns
     except Exception as e:
-        st.error(f"Error fetching portfolio data: {str(e)}")
+        st.error(f"Error processing portfolio data: {str(e)}")
         return None
 
 # Main content
@@ -177,19 +216,21 @@ try:
         custom_returns2 = get_portfolio_data(st.session_state.custom_portfolio2, start_date, end_date)
         custom_returns3 = get_portfolio_data(st.session_state.custom_portfolio3, start_date, end_date)
         
-        if benchmark_returns is not None:
-            # Create comparison plot
+        # Create comparison plot if we have any valid data
+        if benchmark_returns is not None or custom_returns is not None or \
+           custom_returns2 is not None or custom_returns3 is not None:
+            
             fig = go.Figure()
             
-            # Add benchmark portfolio line
-            fig.add_trace(go.Scatter(
-                x=benchmark_returns.index,
-                y=benchmark_returns,
-                name='Benchmark Portfolio',
-                line=dict(color='#1f77b4')
-            ))
+            # Add portfolio lines only if they have valid data
+            if benchmark_returns is not None:
+                fig.add_trace(go.Scatter(
+                    x=benchmark_returns.index,
+                    y=benchmark_returns,
+                    name='Benchmark Portfolio',
+                    line=dict(color='#1f77b4')
+                ))
             
-            # Add custom portfolio lines
             if custom_returns is not None:
                 fig.add_trace(go.Scatter(
                     x=custom_returns.index,
@@ -230,73 +271,62 @@ try:
             st.subheader("Performance Metrics")
             metrics_cols = st.columns(4)
             
-            with metrics_cols[0]:
-                benchmark_total_return = (benchmark_returns.iloc[-1] - 1) * 100
-                st.metric(
-                    "Benchmark Portfolio",
-                    f"{benchmark_total_return:.2f}%"
-                )
+            # Helper function to safely display metrics
+            def display_metric(returns, name, col, benchmark_return=None):
+                if returns is not None and len(returns) > 0:
+                    total_return = (returns.iloc[-1] - 1) * 100
+                    delta = None if benchmark_return is None else f"{(total_return - benchmark_return):.2f}%"
+                    col.metric(name, f"{total_return:.2f}%", delta)
+                else:
+                    col.metric(name, "No data", None)
             
-            with metrics_cols[1]:
-                if custom_returns is not None:
-                    custom_total_return = (custom_returns.iloc[-1] - 1) * 100
-                    st.metric(
-                        "Custom Portfolio 1",
-                        f"{custom_total_return:.2f}%",
-                        f"{(custom_total_return - benchmark_total_return):.2f}%"
-                    )
+            # Display metrics for each portfolio
+            benchmark_return = None
+            if benchmark_returns is not None and len(benchmark_returns) > 0:
+                benchmark_return = (benchmark_returns.iloc[-1] - 1) * 100
             
-            with metrics_cols[2]:
-                if custom_returns2 is not None and not custom_returns2.empty:
-                    custom_total_return2 = (custom_returns2.iloc[-1] - 1) * 100
-                    st.metric(
-                        "Custom Portfolio 2",
-                        f"{custom_total_return2:.2f}%",
-                        f"{(custom_total_return2 - benchmark_total_return):.2f}%"
-                    )
-            
-            with metrics_cols[3]:
-                if custom_returns3 is not None and not custom_returns3.empty:
-                    custom_total_return3 = (custom_returns3.iloc[-1] - 1) * 100
-                    st.metric(
-                        "Custom Portfolio 3",
-                        f"{custom_total_return3:.2f}%",
-                        f"{(custom_total_return3 - benchmark_total_return):.2f}%"
-                    )
-            
-            # Portfolio editors
-            st.header("Portfolio Management")
-            
-            # Create four columns for portfolio editors
-            portfolio_cols = st.columns(4)
-            
-            # Portfolio input sections in columns
-            with portfolio_cols[0]:
-                st.session_state.benchmark_portfolio = portfolio_input_section(
-                    "Benchmark Portfolio",
-                    st.session_state.benchmark_portfolio
-                )
+            display_metric(benchmark_returns, "Benchmark Portfolio", metrics_cols[0])
+            display_metric(custom_returns, "Custom Portfolio 1", metrics_cols[1], benchmark_return)
+            display_metric(custom_returns2, "Custom Portfolio 2", metrics_cols[2], benchmark_return)
+            display_metric(custom_returns3, "Custom Portfolio 3", metrics_cols[3], benchmark_return)
+        
+        else:
+            st.warning("No valid data available for any portfolio. Please check your portfolio compositions and try again.")
+        
+        # Portfolio editors
+        st.header("Portfolio Management")
+        
+        # Create four columns for portfolio editors
+        portfolio_cols = st.columns(4)
+        
+        # Portfolio input sections in columns
+        with portfolio_cols[0]:
+            st.session_state.benchmark_portfolio = portfolio_input_section(
+                "Benchmark Portfolio",
+                st.session_state.benchmark_portfolio
+            )
 
-            with portfolio_cols[1]:
-                st.session_state.custom_portfolio = portfolio_input_section(
-                    "Custom Portfolio 1",
-                    st.session_state.custom_portfolio
-                )
-            
-            with portfolio_cols[2]:
-                st.session_state.custom_portfolio2 = portfolio_input_section(
-                    "Custom Portfolio 2",
-                    st.session_state.custom_portfolio2
-                )
-            
-            with portfolio_cols[3]:
-                st.session_state.custom_portfolio3 = portfolio_input_section(
-                    "Custom Portfolio 3",
-                    st.session_state.custom_portfolio3
-                )
+        with portfolio_cols[1]:
+            st.session_state.custom_portfolio = portfolio_input_section(
+                "Custom Portfolio 1",
+                st.session_state.custom_portfolio
+            )
+        
+        with portfolio_cols[2]:
+            st.session_state.custom_portfolio2 = portfolio_input_section(
+                "Custom Portfolio 2",
+                st.session_state.custom_portfolio2
+            )
+        
+        with portfolio_cols[3]:
+            st.session_state.custom_portfolio3 = portfolio_input_section(
+                "Custom Portfolio 3",
+                st.session_state.custom_portfolio3
+            )
 
 except Exception as e:
     st.error(f"An unexpected error occurred: {str(e)}")
+    st.error("Stack trace:", exc_info=True)
 
 # Footer
 st.markdown("---")
