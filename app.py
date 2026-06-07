@@ -1,9 +1,15 @@
+import os
+import certifi
+# Ensure SSL env vars are set before importing any network libraries
+os.environ["SSL_CERT_FILE"] = certifi.where()
+os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
+
 import streamlit as st
 import yfinance as yf
 import plotly.graph_objects as go
 import pandas as pd
 from datetime import datetime, timedelta
-
+import time
 
 # -----------------------------
 # Page setup
@@ -76,40 +82,80 @@ end_date = datetime.today()
 def fetch_prices(symbols, start_date, end_date):
     """
     Fetch adjusted close price data for a list of symbols.
+    Implements chunking and retry/backoff to mitigate 429 (rate limit) errors.
     """
     if not symbols:
         return pd.DataFrame()
 
-    data = yf.download(
-        tickers=symbols,
-        start=start_date,
-        end=end_date,
-        progress=False,
-        auto_adjust=True,
-        group_by="ticker",
-        threads=False,
-        timeout=20
-    )
+    # yfinance can struggle with very large ticker lists — fetch in chunks
+    batch_size = 50
+    all_prices = pd.DataFrame()
 
-    prices = pd.DataFrame()
+    for i in range(0, len(symbols), batch_size):
+        chunk = symbols[i:i + batch_size]
 
-    # If only one symbol is downloaded, yfinance returns a simpler DataFrame
-    if len(symbols) == 1:
-        symbol = symbols[0]
-        if "Close" in data.columns:
-            prices[symbol] = data["Close"]
-    else:
-        for symbol in symbols:
+        # retry loop for rate limits
+        attempts = 0
+        max_attempts = 4
+        backoff = 5
+        while attempts < max_attempts:
             try:
-                prices[symbol] = data[symbol]["Close"]
-            except Exception:
-                pass
+                data = yf.download(
+                    tickers=chunk,
+                    start=start_date,
+                    end=end_date,
+                    progress=False,
+                    auto_adjust=True,
+                    group_by="ticker",
+                    threads=False,
+                    timeout=20
+                )
+                # success
+                break
+            except Exception as e:
+                attempts += 1
+                err_text = str(e).lower()
+                # If we detect a rate-limit style error, wait and retry with exponential backoff
+                if "429" in err_text or "too many" in err_text or "rate limit" in err_text:
+                    wait = backoff * (2 ** (attempts - 1))
+                    st.warning(f"Rate limit encountered when fetching prices. Retrying in {wait}s (attempt {attempts}/{max_attempts})...")
+                    time.sleep(wait)
+                    continue
+                # For other errors, re-raise after brief wait
+                if attempts >= max_attempts:
+                    raise
+                time.sleep(1)
+        else:
+            # exhausted retries
+            st.error("Failed to fetch market data after multiple attempts — try again later.")
+            return pd.DataFrame()
 
-    prices = prices.dropna(how="all")
-    return prices
+        prices_chunk = pd.DataFrame()
+
+        # If only one symbol is downloaded, yfinance returns a simpler DataFrame
+        if len(chunk) == 1:
+            sym = chunk[0]
+            if isinstance(data, pd.DataFrame) and "Close" in data.columns:
+                prices_chunk[sym] = data["Close"]
+        else:
+            for sym in chunk:
+                try:
+                    prices_chunk[sym] = data[sym]["Close"]
+                except Exception:
+                    # ignore missing symbols in this chunk
+                    pass
+
+        # merge chunk results
+        if all_prices.empty:
+            all_prices = prices_chunk
+        else:
+            all_prices = all_prices.join(prices_chunk, how="outer")
+
+    all_prices = all_prices.dropna(how="all")
+    return all_prices
 
 
-def calculate_portfolio_returns(portfolio, start_date, end_date):
+def calculate_portfolio_returns(portfolio, start_date, end_date, prices_override=None):
     """
     Calculate cumulative portfolio return from weighted symbols.
     Portfolio weights are entered as percentages.
@@ -119,7 +165,11 @@ def calculate_portfolio_returns(portfolio, start_date, end_date):
     if not symbols:
         return None
 
-    prices = fetch_prices(symbols, start_date, end_date)
+    # Use provided prices DataFrame if available (single fetch for all portfolios)
+    if prices_override is not None:
+        prices = prices_override.copy()
+    else:
+        prices = fetch_prices(symbols, start_date, end_date)
 
     if prices.empty:
         return None
@@ -258,18 +308,32 @@ run_update = st.button("Update Chart", type="primary")
 
 if run_update:
     with st.spinner("Loading market data..."):
+        # Gather union of all symbols across all portfolios to minimize API calls
+        all_symbols = set()
+        for p in ([benchmark_portfolio] + list(custom_portfolios.values())):
+            for s, w in p.items():
+                if s and w > 0:
+                    all_symbols.add(s)
+
+        prices = None
+        if all_symbols:
+            prices = fetch_prices(list(all_symbols), start_date, end_date)
+
+        # Calculate benchmark using single prices DataFrame
         st.session_state.benchmark_returns = calculate_portfolio_returns(
             benchmark_portfolio,
             start_date,
-            end_date
+            end_date,
+            prices_override=prices
         )
 
-        # calculate each custom portfolio
+        # calculate each custom portfolio reusing the same prices
         for pid, portfolio in custom_portfolios.items():
             st.session_state.custom_returns[pid] = calculate_portfolio_returns(
                 portfolio,
                 start_date,
-                end_date
+                end_date,
+                prices_override=prices
             )
 
 benchmark_returns = st.session_state.benchmark_returns
