@@ -2,4 +2,11 @@ streamlit==1.32.0
 yfinance==0.2.36
 plotly==5.19.0
 pandas==2.2.1
-numpy==1.26.4 
+numpy==1.26.4
+
+# Google Drive / Excel support (for caching)
+google-api-python-client>=2.70.0
+google-auth>=2.20.0
+google-auth-httplib2>=0.1.0
+google-auth-oauthlib>=1.0.0
+openpyxl>=3.1.2

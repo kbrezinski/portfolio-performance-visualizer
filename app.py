@@ -1,37 +1,126 @@
 import os
 import certifi
-# Ensure SSL env vars are set before importing any network libraries
-os.environ["SSL_CERT_FILE"] = certifi.where()
-os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
+from pathlib import Path
 
 import streamlit as st
-import yfinance as yf
 import plotly.graph_objects as go
+import plotly.express as px
 import pandas as pd
 from datetime import datetime, timedelta
-import time
+import yfinance as yf
 
-# -----------------------------
-# Page setup
-# -----------------------------
-st.set_page_config(
-    page_title="Portfolio Visualizer",
-    page_icon="📈",
-    layout="wide"
-)
+# Set SSL env vars so network libraries use certifi bundle
+cert_path = certifi.where()
+os.environ["SSL_CERT_FILE"] = cert_path
+os.environ["REQUESTS_CA_BUNDLE"] = cert_path
+os.environ["CURL_CA_BUNDLE"] = cert_path.replace('\\', '/') if isinstance(cert_path, str) else cert_path
 
-st.title("📈 Portfolio Visualizer")
+# Sanity check for cert bundle (show actionable warning if missing)
+try:
+    if not Path(cert_path).exists():
+        st.warning(
+            "SSL certificate bundle not found at expected path.\n"
+            "Run `python -m pip install --upgrade certifi requests urllib3 pyOpenSSL` and restart Streamlit.\n"
+            f"Expected cert path: {cert_path}"
+        )
+except Exception:
+    pass
+
+
+# Alpha Vantage settings
+# (removed) - switching to yfinance.Tickers for batch fetch
+
+
+def fetch_prices_direct(symbols, start_date, end_date, interval='1wk'):
+    """
+    Fetch adjusted close price series for each symbol using yfinance.Tickers.
+    Try batch fetch first; if any symbols are missing or the batch fails (SSL or other
+    network errors), fall back to per-symbol fetches and warn about skipped tickers.
+    """
+    if not symbols:
+        return pd.DataFrame()
+
+    tickers_str = " ".join(symbols)
+    collected = {}
+
+    # helper to extract 'Close' series from a history DataFrame
+    def extract_close_series(hist_df, sym=None):
+        if hist_df is None or hist_df.empty:
+            return None
+        # MultiIndex columns when multiple tickers
+        if isinstance(hist_df.columns, pd.MultiIndex):
+            if sym is not None:
+                # preferred location ('Close', symbol)
+                col = ('Close', sym)
+                if col in hist_df.columns:
+                    return hist_df[col].dropna().rename(sym)
+                # fallback: take xs by ticker then 'Close'
+                try:
+                    return hist_df.xs(sym, axis=1, level=-1)['Close'].dropna().rename(sym)
+                except Exception:
+                    return None
+            else:
+                # caller didn't provide symbol mapping - not used
+                return None
+        else:
+            # single ticker DataFrame
+            if 'Close' in hist_df.columns:
+                name = sym if sym is not None else symbols[0]
+                return hist_df['Close'].dropna().rename(name)
+            return None
+
+    # Attempt batch fetch first
+    try:
+        t = yf.Tickers(tickers_str)
+        start_dt = pd.to_datetime(start_date)
+        end_dt = pd.to_datetime(end_date)
+        hist = t.history(start=start_dt, end=end_dt + pd.Timedelta(days=1), interval=interval, auto_adjust=True)
+
+        # parse results for each requested symbol
+        if hist is not None and not hist.empty:
+            for s in symbols:
+                ser = extract_close_series(hist, s)
+                if ser is not None and not ser.empty:
+                    collected[s] = ser
+    except Exception as e:
+        st.warning(f"yfinance batch fetch failed: {e}")
+        hist = None
+
+    # If batch didn't return all symbols, try per-symbol fetch for missing ones
+    missing = [s for s in symbols if s not in collected]
+    if missing:
+        for s in missing:
+            try:
+                t0 = yf.Ticker(s)
+                h0 = t0.history(start=pd.to_datetime(start_date), end=pd.to_datetime(end_date) + pd.Timedelta(days=1), interval=interval, auto_adjust=True)
+                ser = extract_close_series(h0, s)
+                if ser is not None and not ser.empty:
+                    collected[s] = ser
+                else:
+                    st.warning(f"{s}: no historical price data (possibly delisted or unsupported)")
+            except Exception as e:
+                # Common SSL/curl errors may surface here; report and continue
+                st.warning(f"Failed to fetch {s}: {e}")
+
+    if not collected:
+        return pd.DataFrame()
+
+    prices = pd.concat(collected.values(), axis=1)
+    # ensure columns are named correctly (use collected keys order)
+    prices.columns = list(collected.keys())
+    prices = prices.sort_index()
+
+    # slice to requested range and drop rows where all symbols are NaN
+    prices = prices[(prices.index >= pd.to_datetime(start_date)) & (prices.index <= pd.to_datetime(end_date))]
+    prices = prices.dropna(how='all')
+    return prices
 
 
 # -----------------------------
 # Default portfolios
 # -----------------------------
-DEFAULT_BENCHMARK = {
-    "XIU.TO": 35.0,
-    "VFV.TO": 65.0,
-}
 
-DEFAULT_CUSTOM = {
+DEFAULT_BENCHMARK = {
     "AVDV": 8.0,
     "AVUV": 8.0,
     "VUN.TO": 25.0,
@@ -40,164 +129,25 @@ DEFAULT_CUSTOM = {
     "XIC.TO": 29.0,
 }
 
-# Defaults for 4 custom portfolios
+# Defaults for 3 custom portfolios (show three editors)
 DEFAULT_CUSTOMS = [
-    {},
+    {"TSLA": 50.0, "AAPL": 50.0},
     {},
     {}
 ]
 
 
-# -----------------------------
-# Sidebar controls
-# -----------------------------
-st.sidebar.header("Settings")
+# Simplify UI: fixed 1-month view (start from scratch)
+# Force view to 1M
+slice_start_date = datetime.today() - timedelta(days=30)
+fetch_start_date = slice_start_date
+fetch_end_date = datetime.today()
 
-time_periods = {
-    "1 Month": 30,
-    "3 Months": 90,
-    "6 Months": 180,
-    "1 Year": 365,
-    "3 Years": 1095,
-    "5 Years": 1825,
-}
-
-selected_period = st.sidebar.selectbox(
-    "Select Time Period",
-    list(time_periods.keys()),
-    index=3
-)
-
-# Always show 4 custom portfolios in the top row
-num_custom_portfolios = 3
-
-start_date = datetime.today() - timedelta(days=time_periods[selected_period])
-end_date = datetime.today()
-
+# Remove force-refresh and debug buttons — keep a single Update Chart button
 
 # -----------------------------
-# Helper functions
+# Helper UI and calculation functions
 # -----------------------------
-@st.cache_data(ttl=21600)
-def fetch_prices(symbols, start_date, end_date):
-    """
-    Fetch adjusted close price data for a list of symbols.
-    Implements chunking and retry/backoff to mitigate 429 (rate limit) errors.
-    """
-    if not symbols:
-        return pd.DataFrame()
-
-    # yfinance can struggle with very large ticker lists — fetch in chunks
-    batch_size = 50
-    all_prices = pd.DataFrame()
-
-    for i in range(0, len(symbols), batch_size):
-        chunk = symbols[i:i + batch_size]
-
-        # retry loop for rate limits
-        attempts = 0
-        max_attempts = 4
-        backoff = 5
-        while attempts < max_attempts:
-            try:
-                data = yf.download(
-                    tickers=chunk,
-                    start=start_date,
-                    end=end_date,
-                    progress=False,
-                    auto_adjust=True,
-                    group_by="ticker",
-                    threads=False,
-                    timeout=20
-                )
-                # success
-                break
-            except Exception as e:
-                attempts += 1
-                err_text = str(e).lower()
-                # If we detect a rate-limit style error, wait and retry with exponential backoff
-                if "429" in err_text or "too many" in err_text or "rate limit" in err_text:
-                    wait = backoff * (2 ** (attempts - 1))
-                    st.warning(f"Rate limit encountered when fetching prices. Retrying in {wait}s (attempt {attempts}/{max_attempts})...")
-                    time.sleep(wait)
-                    continue
-                # For other errors, re-raise after brief wait
-                if attempts >= max_attempts:
-                    raise
-                time.sleep(1)
-        else:
-            # exhausted retries
-            st.error("Failed to fetch market data after multiple attempts — try again later.")
-            return pd.DataFrame()
-
-        prices_chunk = pd.DataFrame()
-
-        # If only one symbol is downloaded, yfinance returns a simpler DataFrame
-        if len(chunk) == 1:
-            sym = chunk[0]
-            if isinstance(data, pd.DataFrame) and "Close" in data.columns:
-                prices_chunk[sym] = data["Close"]
-        else:
-            for sym in chunk:
-                try:
-                    prices_chunk[sym] = data[sym]["Close"]
-                except Exception:
-                    # ignore missing symbols in this chunk
-                    pass
-
-        # merge chunk results
-        if all_prices.empty:
-            all_prices = prices_chunk
-        else:
-            all_prices = all_prices.join(prices_chunk, how="outer")
-
-    all_prices = all_prices.dropna(how="all")
-    return all_prices
-
-
-def calculate_portfolio_returns(portfolio, start_date, end_date, prices_override=None):
-    """
-    Calculate cumulative portfolio return from weighted symbols.
-    Portfolio weights are entered as percentages.
-    """
-    symbols = [symbol for symbol, weight in portfolio.items() if symbol and weight > 0]
-
-    if not symbols:
-        return None
-
-    # Use provided prices DataFrame if available (single fetch for all portfolios)
-    if prices_override is not None:
-        prices = prices_override.copy()
-    else:
-        prices = fetch_prices(symbols, start_date, end_date)
-
-    if prices.empty:
-        return None
-
-    # Keep only symbols that successfully downloaded
-    valid_symbols = [symbol for symbol in symbols if symbol in prices.columns]
-
-    if not valid_symbols:
-        return None
-
-    weights = pd.Series(
-        {symbol: portfolio[symbol] for symbol in valid_symbols},
-        dtype=float
-    )
-
-    # Normalize weights to 100%
-    weights = weights / weights.sum()
-
-    daily_returns = prices[valid_symbols].pct_change().dropna()
-
-    if daily_returns.empty:
-        return None
-
-    portfolio_daily_returns = daily_returns.mul(weights, axis=1).sum(axis=1)
-    cumulative_returns = (1 + portfolio_daily_returns).cumprod()
-
-    return cumulative_returns
-
 
 def portfolio_editor(title, default_portfolio, key_prefix, max_rows=6):
     """
@@ -224,7 +174,6 @@ def portfolio_editor(title, default_portfolio, key_prefix, max_rows=6):
             key=f"{key_prefix}_symbol_{i}"
         ).strip().upper()
 
-        # Use a plain text input for integer weights (no spinner arrows, no decimals)
         default_weight_int = int(default_weight) if default_weight else 0
         weight_str = col2.text_input(
             f"Weight %",
@@ -253,35 +202,66 @@ def portfolio_editor(title, default_portfolio, key_prefix, max_rows=6):
     return portfolio
 
 
-def total_return(cumulative_returns):
+def calculate_portfolio_returns(portfolio, start_date, end_date, prices_override=None):
     """
-    Calculate total return percentage from cumulative return series.
+    Calculate cumulative portfolio return from weighted symbols.
+    Portfolio weights are entered as percentages.
     """
-    if cumulative_returns is None or cumulative_returns.empty:
+    symbols = [symbol for symbol, weight in portfolio.items() if symbol and weight > 0]
+
+    if not symbols:
         return None
 
-    return (cumulative_returns.iloc[-1] - 1) * 100
+    if prices_override is not None:
+        prices = prices_override.copy()
+    else:
+        prices = fetch_prices_direct(symbols, start_date, end_date, interval='1wk')
 
+    if prices.empty:
+        return None
+
+    valid_symbols = [s for s in symbols if s in prices.columns]
+    if not valid_symbols:
+        return None
+
+    weights = pd.Series({s: portfolio[s] for s in valid_symbols}, dtype=float)
+    weights = weights / weights.sum()
+
+    returns = prices[valid_symbols].pct_change().dropna()
+    if returns.empty:
+        return None
+
+    port_daily = returns.mul(weights, axis=1).sum(axis=1)
+    cumulative = (1 + port_daily).cumprod()
+    return cumulative
+
+
+# -----------------------------
+# Page logic
+# -----------------------------
+# Always show 3 custom portfolios in the top row
+num_custom_portfolios = 3
+
+# -----------------------------
+# Sidebar controls
+# -----------------------------
+st.sidebar.header("Settings")
+
+# Y-axis mode and initial investment for value view
+y_axis_mode = st.sidebar.radio("Y-axis", ("Growth of $1", "Percent", "Value ($)"))
+initial_investment = st.sidebar.number_input("Initial investment ($)", min_value=1, value=1000, step=100)
 
 # -----------------------------
 # Portfolio input
 # -----------------------------
 st.header("Portfolio Configuration")
 
-# Layout: benchmark on the left, 3 custom portfolios across the top row
-cols = st.columns([1, 1, 1, 1])
-
-with cols[0]:
-    benchmark_portfolio = portfolio_editor(
-        "Benchmark",
-        DEFAULT_BENCHMARK,
-        "benchmark",
-        max_rows=6
-    )
+# Layout: show only custom portfolios (benchmark is fixed and not editable)
+cols = st.columns(num_custom_portfolios)
 
 custom_portfolios = {}
 for i in range(num_custom_portfolios):
-    with cols[i + 1]:
+    with cols[i]:
         title = f"Custom {i + 1}"
         default = DEFAULT_CUSTOMS[i] if i < len(DEFAULT_CUSTOMS) else {}
         custom_portfolios[f"custom_{i}"] = portfolio_editor(
@@ -290,6 +270,9 @@ for i in range(num_custom_portfolios):
             f"custom_{i}",
             max_rows=6
         )
+
+# Benchmark is fixed (not shown in editor)
+benchmark_portfolio = DEFAULT_BENCHMARK
 
 
 # -----------------------------
@@ -307,8 +290,8 @@ if "custom_returns" not in st.session_state:
 run_update = st.button("Update Chart", type="primary")
 
 if run_update:
-    with st.spinner("Loading market data..."):
-        # Gather union of all symbols across all portfolios to minimize API calls
+    with st.spinner("Loading market data (direct fetch, 1 month)..."):
+        # Collect symbols from benchmark + custom editors
         all_symbols = set()
         for p in ([benchmark_portfolio] + list(custom_portfolios.values())):
             for s, w in p.items():
@@ -317,22 +300,21 @@ if run_update:
 
         prices = None
         if all_symbols:
-            prices = fetch_prices(list(all_symbols), start_date, end_date)
+            prices = fetch_prices_direct(sorted(all_symbols), fetch_start_date, fetch_end_date, interval='1wk')
 
-        # Calculate benchmark using single prices DataFrame
+        # Calculate benchmark and custom portfolios using the direct prices
         st.session_state.benchmark_returns = calculate_portfolio_returns(
-            benchmark_portfolio,
-            start_date,
-            end_date,
+            DEFAULT_BENCHMARK,
+            fetch_start_date,
+            fetch_end_date,
             prices_override=prices
         )
 
-        # calculate each custom portfolio reusing the same prices
         for pid, portfolio in custom_portfolios.items():
             st.session_state.custom_returns[pid] = calculate_portfolio_returns(
                 portfolio,
-                start_date,
-                end_date,
+                fetch_start_date,
+                fetch_end_date,
                 prices_override=prices
             )
 
@@ -349,63 +331,96 @@ if custom_returns is None:
     custom_returns = {}
     st.session_state.custom_returns = {}
 
+# Helper to slice series to the selected view range and convert per y-axis mode
+def prepare_series(series):
+    if series is None or series.empty:
+        return None
+    s = series.copy()
+    s = s[s.index >= slice_start_date]
+    if s.empty:
+        return None
+
+    # normalize to the slice start so the view reflects changes from the displayed start
+    start_val = float(s.iloc[0])
+    if start_val == 0:
+        return None
+
+    if y_axis_mode == "Growth of $1":
+        return s / start_val
+    if y_axis_mode == "Percent":
+        return (s / start_val - 1.0) * 100.0
+    # Value ($)
+    return (s / start_val) * float(initial_investment)
+
 fig = go.Figure()
 
+# build list of (label, series, id) for plotting so we can assign colors consistently
+plot_items = []
 if benchmark_returns is not None:
+    plot_items.append(("Ken's Benchmark", benchmark_returns, 'benchmark'))
+
+for pid, series in custom_returns.items():
+    p = custom_portfolios.get(pid)
+    tickers = ", ".join(p.keys()) if p else pid.replace("_", " ").title()
+    plot_items.append((tickers, series, pid))
+
+# color sequence
+colors = px.colors.qualitative.Plotly
+
+plotted = []  # store (name, color) for legend
+color_idx = 0
+for i, (name, series, pid) in enumerate(plot_items):
+    s = prepare_series(series)
+    if s is None:
+        continue
+    color = colors[color_idx % len(colors)]
+    # always solid
     fig.add_trace(
         go.Scatter(
-            x=benchmark_returns.index,
-            y=benchmark_returns,
+            x=s.index,
+            y=s,
             mode="lines",
-            name="Benchmark Portfolio"
+            name=name,
+            line=dict(color=color, dash='solid', width=2)
         )
     )
+    plotted.append((name, color))
+    color_idx += 1
 
-# Add traces for all custom portfolios present in session_state
-for pid, series in custom_returns.items():
-    if series is not None:
-        fig.add_trace(
-            go.Scatter(
-                x=series.index,
-                y=series,
-                mode="lines",
-                name=pid.replace("_", " ").title()
-            )
-        )
-
-if (benchmark_returns is None) and (not any(v is not None for v in custom_returns.values())):
+# If nothing plotted, show warning
+if not plotted:
     st.warning("No data available. Check your ticker symbols and try again.")
 else:
+    yaxis_title = ""
+    if y_axis_mode == "Growth of $1":
+        yaxis_title = "Growth of $1"
+    elif y_axis_mode == "Percent":
+        yaxis_title = "% Return"
+    else:
+        yaxis_title = "Value ($)"
+
     fig.update_layout(
-        title=f"Portfolio Performance Comparison — {selected_period}",
+        title=f"Portfolio Performance Comparison",
         xaxis_title="Date",
-        yaxis_title="Growth of $1",
+        yaxis_title=yaxis_title,
         height=600,
         hovermode="x unified",
-        template="plotly_white"
+        template="plotly_white",
+        showlegend=False  # hide built-in legend, we'll render custom below
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # Show metrics for benchmark + each custom portfolio
-    metrics = []
-    metrics.append(("Benchmark Total Return", total_return(benchmark_returns)))
-
-    for i in range(num_custom_portfolios):
-        pid = f"custom_{i}"
-        metrics.append((f"Custom {i + 1} Total Return", total_return(custom_returns.get(pid))))
-
-    # display metrics in a row (will wrap if too many)
-    cols = st.columns(len(metrics))
-    for col, (label, value) in zip(cols, metrics):
-        col.metric(
-            label,
-            "No data" if value is None else f"{value:.2f}%"
+    # Render custom HTML legend for plotted traces
+    html = '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px">'
+    for name, color in plotted:
+        # draw a small solid line sample and add spacing before the name
+        item = (
+            f"<div style='display:flex;align-items:center;gap:8px;'>"
+            f"<div style='width:40px;height:12px;border-top:3px solid {color};margin-right:8px;'></div>"
+            f"<div style='font-size:14px'>{name}</div>"
+            f"</div>"
         )
-
-
-# -----------------------------
-# Footer
-# -----------------------------
-st.markdown("---")
-st.caption("Data from Yahoo Finance via yfinance.")
+        html += item
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
