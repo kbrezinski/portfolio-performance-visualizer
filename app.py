@@ -26,27 +26,60 @@ try:
 except Exception:
     pass
 
-# Debug: show yfinance ticker.info for AAPL (visible in Streamlit UI)
-try:
-    with st.expander("yfinance debug: AAPL ticker.info", expanded=True):
-        st.write("certifi bundle path:", cert_path)
-        st.write("SSL_CERT_FILE env:", os.environ.get("SSL_CERT_FILE"))
-        st.write("REQUESTS_CA_BUNDLE env:", os.environ.get("REQUESTS_CA_BUNDLE"))
-        st.write("CURL_CA_BUNDLE env:", os.environ.get("CURL_CA_BUNDLE"))
+# Debug: yfinance diagnostic expander (shows raw endpoint result and yfinance fallbacks)
+with st.expander("yfinance debug: AAPL diagnostics", expanded=True):
+    st.write("certifi bundle path:", cert_path)
+    st.write("SSL_CERT_FILE env:", os.environ.get("SSL_CERT_FILE"))
+    st.write("REQUESTS_CA_BUNDLE env:", os.environ.get("REQUESTS_CA_BUNDLE"))
+    st.write("CURL_CA_BUNDLE env:", os.environ.get("CURL_CA_BUNDLE"))
+
+    import requests, traceback, json
+
+    url = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=AAPL"
+    try:
+        r = requests.get(url, timeout=15, verify=cert_path)
+        st.write("Raw requests.get status:", r.status_code)
+        st.write("Response length:", len(r.text or ""))
+        # show up to 2000 chars to avoid excessively long output
+        st.text(r.text[:2000])
+    except Exception as e:
+        st.error("requests.get failed")
+        st.text(str(e))
+        st.text(traceback.format_exc())
+
+    # Try some yfinance calls that are less scraping-dependent
+    try:
+        ticker = yf.Ticker("AAPL")
+        st.write("ticker.history (last 5):")
         try:
-            ticker = yf.Ticker("AAPL")
-            info = ticker.info
-            try:
-                st.json(info)
-            except Exception:
-                st.write(info)
+            h = ticker.history(period="5d", interval="1d", auto_adjust=True)
+            st.write(h.tail().to_dict())
         except Exception as e:
-            import traceback
-            st.error("Failed to fetch ticker.info for AAPL")
-            st.text(str(e))
-            st.text(traceback.format_exc())
-except Exception:
-    pass
+            st.write("ticker.history failed:", str(e))
+    except Exception as e:
+        st.error("yf.Ticker() failed")
+        st.text(str(e))
+        st.text(traceback.format_exc())
+
+    try:
+        fi = getattr(ticker, "fast_info", None)
+        st.write("ticker.fast_info:", fi)
+    except Exception:
+        pass
+
+    # Attempt to surface any raw string attributes yfinance may have stored
+    try:
+        js = None
+        for attr in ("_quote", "_info", "_yf_info", "_json", "html"):
+            val = getattr(ticker, attr, None)
+            if isinstance(val, str) and val.strip():
+                js = val
+                break
+        if js:
+            st.write("Found raw string on ticker attr (truncated):")
+            st.text(js[:2000])
+    except Exception:
+        pass
 
 
 # Alpha Vantage settings
