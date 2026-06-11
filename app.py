@@ -26,6 +26,28 @@ try:
 except Exception:
     pass
 
+# Debug: show yfinance ticker.info for AAPL (visible in Streamlit UI)
+try:
+    with st.expander("yfinance debug: AAPL ticker.info", expanded=True):
+        st.write("certifi bundle path:", cert_path)
+        st.write("SSL_CERT_FILE env:", os.environ.get("SSL_CERT_FILE"))
+        st.write("REQUESTS_CA_BUNDLE env:", os.environ.get("REQUESTS_CA_BUNDLE"))
+        st.write("CURL_CA_BUNDLE env:", os.environ.get("CURL_CA_BUNDLE"))
+        try:
+            ticker = yf.Ticker("AAPL")
+            info = ticker.info
+            try:
+                st.json(info)
+            except Exception:
+                st.write(info)
+        except Exception as e:
+            import traceback
+            st.error("Failed to fetch ticker.info for AAPL")
+            st.text(str(e))
+            st.text(traceback.format_exc())
+except Exception:
+    pass
+
 
 # Alpha Vantage settings
 # (removed) - switching to yfinance.Tickers for batch fetch
