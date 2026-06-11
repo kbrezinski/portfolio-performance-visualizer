@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 from datetime import datetime, timedelta
+import time
 import yfinance as yf
 
 # Set SSL env vars so network libraries use certifi bundle
@@ -86,11 +87,13 @@ with st.expander("yfinance debug: AAPL diagnostics", expanded=True):
 # (removed) - switching to yfinance.Tickers for batch fetch
 
 
+@st.cache_data(ttl=3600)
 def fetch_prices_direct(symbols, start_date, end_date, interval='1wk'):
     """
     Fetch adjusted close price series for each symbol using yfinance.Tickers.
-    Try batch fetch first; if any symbols are missing or the batch fails (SSL or other
-    network errors), fall back to per-symbol fetches and warn about skipped tickers.
+    Uses a batch attempt first; falls back to per-symbol with retries/backoff on failures
+    (handles transient 429 rate limits). Results cached for 1 hour to avoid repeated
+    throttling.
     """
     if not symbols:
         return pd.DataFrame()
@@ -124,38 +127,53 @@ def fetch_prices_direct(symbols, start_date, end_date, interval='1wk'):
                 return hist_df['Close'].dropna().rename(name)
             return None
 
-    # Attempt batch fetch first
-    try:
+    def with_retries(fn, *args, **kwargs):
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            try:
+                return fn(*args, **kwargs)
+            except Exception as e:
+                msg = str(e)
+                # treat obvious rate-limit messages specially
+                if '429' in msg or 'Too Many Requests' in msg:
+                    wait = min(60, (2 ** attempt) * 5)
+                    st.warning(f"Rate limited by remote service. Retrying in {wait}s (attempt {attempt+1}/{max_attempts})")
+                    time.sleep(wait)
+                    continue
+                # SSL or network issues: short backoff and retry
+                st.warning(f"Transient error fetching data: {e}. Retrying (attempt {attempt+1}/{max_attempts})")
+                time.sleep(min(30, 2 ** attempt))
+                continue
+        return None
+
+    # Batch attempt
+    def batch_fetch():
         t = yf.Tickers(tickers_str)
         start_dt = pd.to_datetime(start_date)
         end_dt = pd.to_datetime(end_date)
-        hist = t.history(start=start_dt, end=end_dt + pd.Timedelta(days=1), interval=interval, auto_adjust=True)
+        return t.history(start=start_dt, end=end_dt + pd.Timedelta(days=1), interval=interval, auto_adjust=True)
 
-        # parse results for each requested symbol
-        if hist is not None and not hist.empty:
-            for s in symbols:
-                ser = extract_close_series(hist, s)
-                if ser is not None and not ser.empty:
-                    collected[s] = ser
-    except Exception as e:
-        st.warning(f"yfinance batch fetch failed: {e}")
-        hist = None
+    hist = with_retries(batch_fetch)
+    if hist is not None and not getattr(hist, 'empty', False):
+        for s in symbols:
+            ser = extract_close_series(hist, s)
+            if ser is not None and not ser.empty:
+                collected[s] = ser
 
-    # If batch didn't return all symbols, try per-symbol fetch for missing ones
+    # Per-symbol fallback with retries for missing symbols
     missing = [s for s in symbols if s not in collected]
     if missing:
         for s in missing:
-            try:
+            def fetch_one():
                 t0 = yf.Ticker(s)
-                h0 = t0.history(start=pd.to_datetime(start_date), end=pd.to_datetime(end_date) + pd.Timedelta(days=1), interval=interval, auto_adjust=True)
-                ser = extract_close_series(h0, s)
-                if ser is not None and not ser.empty:
-                    collected[s] = ser
-                else:
-                    st.warning(f"{s}: no historical price data (possibly delisted or unsupported)")
-            except Exception as e:
-                # Common SSL/curl errors may surface here; report and continue
-                st.warning(f"Failed to fetch {s}: {e}")
+                return t0.history(start=pd.to_datetime(start_date), end=pd.to_datetime(end_date) + pd.Timedelta(days=1), interval=interval, auto_adjust=True)
+
+            h0 = with_retries(fetch_one)
+            ser = extract_close_series(h0, s) if h0 is not None else None
+            if ser is not None and not ser.empty:
+                collected[s] = ser
+            else:
+                st.warning(f"{s}: no historical price data or fetch failed (skipped)")
 
     if not collected:
         return pd.DataFrame()
