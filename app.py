@@ -88,7 +88,7 @@ with st.expander("yfinance debug: AAPL diagnostics", expanded=True):
 
 
 @st.cache_data(ttl=3600)
-def fetch_prices_direct(symbols, start_date, end_date, interval='1wk'):
+def fetch_prices_direct(symbols, start_date, end_date, interval='1mo'):
     """
     Fetch adjusted close price series for each symbol using yfinance.Tickers.
     Uses a batch attempt first; falls back to per-symbol with retries/backoff on failures
@@ -210,11 +210,20 @@ DEFAULT_CUSTOMS = [
 ]
 
 
-# Simplify UI: fixed 1-month view (start from scratch)
-# Force view to 1M
-slice_start_date = datetime.today() - timedelta(days=30)
-fetch_start_date = slice_start_date
+# Timeframe and fetch settings
+# UI: let the user select the displayed timeframe; always fetch 5 years of monthly data
+timeframe_option = st.sidebar.selectbox(
+    "View timeframe",
+    ("1M", "3M", "6M", "1Y", "3Y", "5Y"),
+    index=0,
+)
+_days = {"1M": 30, "3M": 90, "6M": 180, "1Y": 365, "3Y": 365 * 3, "5Y": 365 * 5}
+slice_start_date = datetime.today() - timedelta(days=_days.get(timeframe_option, 30))
+
+# Always fetch 5 years of monthly data to keep downloads small and allow slicing locally
 fetch_end_date = datetime.today()
+fetch_start_date = fetch_end_date - timedelta(days=365 * 5)
+fetch_interval = '1mo'
 
 # Remove force-refresh and debug buttons — keep a single Update Chart button
 
