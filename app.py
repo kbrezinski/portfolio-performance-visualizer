@@ -137,11 +137,15 @@ DEFAULT_BENCHMARK = {
 
 # Defaults for 3 custom portfolios (show three editors)
 DEFAULT_CUSTOMS = [
-    {"VTI": 48.0, "VXUS": 24.0, "BND": 20.0, "VNQ": 8.0},
     {"TSLA": 14.0, "AAPL": 14.0, "MSFT": 14.0, "GOOGL": 14.0, "AMZN": 14.0,
       "META": 14.0, "NVDA": 16.0},
+    {},
+    {},
     {}
 ]
+
+# Optional second benchmark (user's VTI-style benchmark)
+SECOND_BENCHMARK = {"VTI": 48.0, "VXUS": 24.0, "BND": 20.0, "VNQ": 8.0}
 
 
 # Timeframe and fetch settings
@@ -149,7 +153,7 @@ DEFAULT_CUSTOMS = [
 timeframe_option = st.sidebar.selectbox(
     "View timeframe",
     ("1M", "3M", "6M", "1Y", "3Y", "5Y"),
-    index=0,
+    index=3,
 )
 _days = {"1M": 30, "3M": 90, "6M": 180, "1Y": 365, "3Y": 365 * 3, "5Y": 365 * 5}
 slice_start_date = datetime.today() - timedelta(days=_days.get(timeframe_option, 30))
@@ -182,24 +186,33 @@ def portfolio_editor(title, default_portfolio, key_prefix, max_rows=8, visible_r
     default_symbols = list(default_portfolio.keys())
     default_weights = list(default_portfolio.values())
 
-    for i in range(rows_to_show):
-        col1, col2 = st.columns([3, 1])
-
+    # Render visible rows and still read hidden rows from session state so all max_rows count
+    for i in range(max_rows):
         default_symbol = default_symbols[i] if i < len(default_symbols) else ""
         default_weight = default_weights[i] if i < len(default_weights) else 0.0
 
-        symbol = col1.text_input(
-            f"Symbol {i + 1}",
-            value=default_symbol,
-            key=f"{key_prefix}_symbol_{i}"
-        ).strip().upper()
-
         default_weight_int = int(default_weight) if default_weight else 0
-        weight_str = col2.text_input(
-            f"Weight %",
-            value=str(default_weight_int),
-            key=f"{key_prefix}_weight_{i}"
-        ).strip()
+
+        # If this row should be shown, render inputs (they will populate session_state).
+        if i < rows_to_show:
+            col1, col2 = st.columns([3, 1])
+            symbol = col1.text_input(
+                f"Symbol {i + 1}",
+                value=st.session_state.get(f"{key_prefix}_symbol_{i}", default_symbol),
+                key=f"{key_prefix}_symbol_{i}"
+            ).strip().upper()
+
+            weight_str = col2.text_input(
+                f"Weight %",
+                value=st.session_state.get(f"{key_prefix}_weight_{i}", str(default_weight_int)),
+                key=f"{key_prefix}_weight_{i}"
+            ).strip()
+        else:
+            # Hidden rows: read values that may have been entered previously from session_state
+            symbol = st.session_state.get(f"{key_prefix}_symbol_{i}", default_symbol)
+            if isinstance(symbol, str):
+                symbol = symbol.strip().upper()
+            weight_str = str(st.session_state.get(f"{key_prefix}_weight_{i}", str(default_weight_int))).strip()
 
         try:
             weight = int(weight_str) if weight_str != "" else 0
@@ -274,6 +287,11 @@ initial_investment = st.sidebar.number_input("Initial investment ($)", min_value
 # Global toggle to expand all portfolio editors (4 rows by default, 8 when checked)
 show_all_global = st.sidebar.checkbox("Show all rows for portfolios (expand to 8)", value=False, key="show_all_portfolios")
 
+# Benchmarks: user can opt-in to plot Ken's fixed benchmark and the optional VTI-style benchmark
+include_benchmark_ken = st.sidebar.checkbox("Plot Ken's Benchmark", value=False, key="include_benchmark_ken")
+include_benchmark_v2 = st.sidebar.checkbox("Plot VTI-style Benchmark", value=False, key="include_benchmark_v2")
+
+
 # -----------------------------
 # Portfolio input
 # -----------------------------
@@ -338,13 +356,28 @@ if run_update:
                 st.session_state["last_prices_key"] = fetch_key
                 st.session_state["cached_prices"] = prices
 
-        # Calculate benchmark and custom portfolios using the direct prices
-        st.session_state.benchmark_returns = calculate_portfolio_returns(
-            DEFAULT_BENCHMARK,
-            fetch_start_date,
-            fetch_end_date,
-            prices_override=prices
-        )
+        # Calculate requested benchmark(s) and custom portfolios using the direct prices
+        # Ken's benchmark (optional)
+        if include_benchmark_ken:
+            st.session_state.benchmark_returns_ken = calculate_portfolio_returns(
+                DEFAULT_BENCHMARK,
+                fetch_start_date,
+                fetch_end_date,
+                prices_override=prices
+            )
+        else:
+            st.session_state.benchmark_returns_ken = None
+
+        # Optional VTI-style benchmark
+        if include_benchmark_v2:
+            st.session_state.benchmark_returns_v2 = calculate_portfolio_returns(
+                SECOND_BENCHMARK,
+                fetch_start_date,
+                fetch_end_date,
+                prices_override=prices
+            )
+        else:
+            st.session_state.benchmark_returns_v2 = None
 
         for pid, portfolio in custom_portfolios.items():
             st.session_state.custom_returns[pid] = calculate_portfolio_returns(
@@ -392,8 +425,11 @@ fig = go.Figure()
 
 # build list of (label, series, id) for plotting so we can assign colors consistently
 plot_items = []
-if benchmark_returns is not None:
-    plot_items.append(("Ken's Benchmark", benchmark_returns, 'benchmark'))
+# Append benchmarks only if enabled
+if st.session_state.get("benchmark_returns_ken") is not None:
+    plot_items.append(("Ken's Benchmark", st.session_state.get("benchmark_returns_ken"), 'benchmark_ken'))
+if st.session_state.get("benchmark_returns_v2") is not None:
+    plot_items.append(("VTI-style Benchmark", st.session_state.get("benchmark_returns_v2"), 'benchmark_v2'))
 
 for pid, series in custom_returns.items():
     p = custom_portfolios.get(pid)
