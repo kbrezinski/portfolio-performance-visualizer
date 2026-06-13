@@ -332,10 +332,21 @@ run_update = st.button("Update Chart", type="primary")
 
 if run_update:
     with st.spinner("Loading market data (direct fetch, 1 month)..."):
-        # Collect symbols from benchmark + custom editors
+        # Collect symbols from custom editors and optionally enabled benchmarks
         all_symbols = set()
-        for p in ([benchmark_portfolio] + list(custom_portfolios.values())):
+        # custom portfolios
+        for p in list(custom_portfolios.values()):
             for s, w in p.items():
+                if s and w > 0:
+                    all_symbols.add(s)
+        # include Ken's benchmark only if requested
+        if include_benchmark_ken:
+            for s, w in DEFAULT_BENCHMARK.items():
+                if s and w > 0:
+                    all_symbols.add(s)
+        # include optional VTI-style benchmark only if requested
+        if include_benchmark_v2:
+            for s, w in SECOND_BENCHMARK.items():
                 if s and w > 0:
                     all_symbols.add(s)
 
