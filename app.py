@@ -148,21 +148,6 @@ DEFAULT_CUSTOMS = [
 SECOND_BENCHMARK = {"VTI": 48.0, "VXUS": 24.0, "BND": 20.0, "VNQ": 8.0}
 
 
-# Timeframe and fetch settings
-# UI: let the user select the displayed timeframe; always fetch 5 years of monthly data
-timeframe_option = st.sidebar.selectbox(
-    "View timeframe",
-    ("1M", "3M", "6M", "1Y", "3Y", "5Y"),
-    index=3,
-)
-_days = {"1M": 30, "3M": 90, "6M": 180, "1Y": 365, "3Y": 365 * 3, "5Y": 365 * 5}
-slice_start_date = datetime.today() - timedelta(days=_days.get(timeframe_option, 30))
-
-# Always fetch 5 years of weekly data to allow slicing locally
-fetch_end_date = datetime.today()
-fetch_start_date = fetch_end_date - timedelta(days=365 * 5)
-fetch_interval = '1wk'
-
 # Remove force-refresh and debug buttons — keep a single Update Chart button
 
 # -----------------------------
@@ -279,6 +264,21 @@ num_custom_portfolios = 4
 # Sidebar controls
 # -----------------------------
 st.sidebar.header("Settings")
+
+# Timeframe and fetch settings
+# UI: let the user select the displayed timeframe; always fetch 5 years of monthly data
+timeframe_option = st.sidebar.selectbox(
+    "View timeframe",
+    ("1M", "3M", "6M", "1Y", "3Y", "5Y"),
+    index=3,
+)
+_days = {"1M": 30, "3M": 90, "6M": 180, "1Y": 365, "3Y": 365 * 3, "5Y": 365 * 5}
+slice_start_date = datetime.today() - timedelta(days=_days.get(timeframe_option, 30))
+
+# Always fetch 5 years of weekly data to allow slicing locally
+fetch_end_date = datetime.today()
+fetch_start_date = fetch_end_date - timedelta(days=365 * 5)
+fetch_interval = '1wk'
 
 # Y-axis mode and initial investment for value view
 y_axis_mode = st.sidebar.radio("Y-axis", ("Growth of $1", "Percent", "Value ($)"))
@@ -440,7 +440,7 @@ plot_items = []
 if st.session_state.get("benchmark_returns_ken") is not None:
     plot_items.append(("Ken's Benchmark", st.session_state.get("benchmark_returns_ken"), 'benchmark_ken'))
 if st.session_state.get("benchmark_returns_v2") is not None:
-    plot_items.append(("VTI-style Benchmark", st.session_state.get("benchmark_returns_v2"), 'benchmark_v2'))
+    plot_items.append(("Balanced Benchmark", st.session_state.get("benchmark_returns_v2"), 'benchmark_v2'))
 
 for pid, series in custom_returns.items():
     p = custom_portfolios.get(pid)
@@ -450,13 +450,30 @@ for pid, series in custom_returns.items():
 # color sequence
 colors = px.colors.qualitative.Plotly
 
-plotted = []  # store (name, color) for legend
+plotted = []  # store (name, color, series, total_pct, annualized) for legend and stats
 color_idx = 0
 for i, (name, series, pid) in enumerate(plot_items):
     s = prepare_series(series)
     if s is None:
         continue
     color = colors[color_idx % len(colors)]
+    # compute total and annualized percent over the displayed slice using the original series
+    total_pct = None
+    annualized = None
+    try:
+        if series is not None and not series.empty:
+            raw_slice = series[series.index >= slice_start_date]
+            if not raw_slice.empty:
+                start_val = float(raw_slice.iloc[0])
+                end_val = float(raw_slice.iloc[-1])
+                total_pct = (end_val / start_val - 1.0) * 100.0
+                days = (raw_slice.index[-1] - raw_slice.index[0]).days
+                if days > 0:
+                    annualized = ((end_val / start_val) ** (365.0 / days) - 1.0) * 100.0
+    except Exception:
+        total_pct = None
+        annualized = None
+
     # always solid
     fig.add_trace(
         go.Scatter(
@@ -469,7 +486,7 @@ for i, (name, series, pid) in enumerate(plot_items):
             hovertemplate="%{x|%Y-%m-%d}: %{y:.2f}<extra></extra>",
         )
     )
-    plotted.append((name, color))
+    plotted.append((name, color, s, total_pct, annualized))
     color_idx += 1
 
 # If nothing plotted, show warning
@@ -505,16 +522,32 @@ else:
 
     st.plotly_chart(fig, use_container_width=True)
 
+    # Render a compact statistics row under the plot
+    try:
+        stats_cols = st.columns(len(plotted))
+        for idx, item in enumerate(plotted):
+            name, color, series_obj, total_pct, annualized = item
+            col = stats_cols[idx]
+            col.markdown(f"**{name}**")
+            if total_pct is None:
+                col.write("N/A")
+            else:
+                col.write(f"Total: {total_pct:.2f}%")
+                if annualized is not None:
+                    col.write(f"Annualized: {annualized:.2f}% p.a.")
+    except Exception:
+        # fail silently if stats rendering errors
+        pass
+
     # Render custom HTML legend for plotted traces
     html = '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px">'
-    for name, color in plotted:
-        # draw a small solid line sample and add spacing before the name
-        item = (
+    for name, color, *_ in plotted:
+        entry = (
             f"<div style='display:flex;align-items:center;gap:8px;'>"
             f"<div style='width:40px;height:12px;border-top:3px solid {color};margin-right:8px;'></div>"
             f"<div style='font-size:14px'>{name}</div>"
             f"</div>"
         )
-        html += item
+        html += entry
     html += '</div>'
     st.markdown(html, unsafe_allow_html=True)
