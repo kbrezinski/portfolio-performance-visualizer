@@ -3,6 +3,10 @@ import certifi
 from pathlib import Path
 
 import streamlit as st
+# set wide layout and small CSS to increase usable width
+st.set_page_config(page_title="Portfolio Visualizer", layout="wide")
+st.markdown("<style>.main .block-container{max-width:95%; padding-left:1rem; padding-right:1rem;}</style>", unsafe_allow_html=True)
+
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
@@ -88,7 +92,7 @@ with st.expander("yfinance debug: AAPL diagnostics", expanded=True):
 
 
 @st.cache_data(ttl=3600)
-def fetch_prices_direct(symbols, start_date, end_date, interval='1mo'):
+def fetch_prices_direct(symbols, start_date, end_date, interval='1wk'):
     """
     Fetch adjusted close price series for each symbol using yfinance.Tickers.
     Uses a batch attempt first; falls back to per-symbol with retries/backoff on failures
@@ -220,10 +224,10 @@ timeframe_option = st.sidebar.selectbox(
 _days = {"1M": 30, "3M": 90, "6M": 180, "1Y": 365, "3Y": 365 * 3, "5Y": 365 * 5}
 slice_start_date = datetime.today() - timedelta(days=_days.get(timeframe_option, 30))
 
-# Always fetch 5 years of monthly data to keep downloads small and allow slicing locally
+# Always fetch 5 years of weekly data to allow slicing locally
 fetch_end_date = datetime.today()
 fetch_start_date = fetch_end_date - timedelta(days=365 * 5)
-fetch_interval = '1mo'
+fetch_interval = '1wk'
 
 # Remove force-refresh and debug buttons — keep a single Update Chart button
 
@@ -231,12 +235,19 @@ fetch_interval = '1mo'
 # Helper UI and calculation functions
 # -----------------------------
 
-def portfolio_editor(title, default_portfolio, key_prefix, max_rows=6):
+def portfolio_editor(title, default_portfolio, key_prefix, max_rows=8, visible_rows=4):
     """
     Simple editable portfolio input area.
     Uses plain text inputs for weights (integers) to avoid spinner controls and decimals.
     """
+    # Render compact header and an expand toggle to reduce vertical space
     st.subheader(title)
+    expand_key = f"{key_prefix}_show_all"
+    if expand_key not in st.session_state:
+        st.session_state[expand_key] = False
+    # checkbox toggles showing all rows
+    show_all = st.checkbox("Show all rows", value=st.session_state.get(expand_key, False), key=expand_key)
+    rows_to_show = max_rows if show_all else visible_rows
 
     portfolio = {}
     total_weight = 0.0
@@ -244,7 +255,7 @@ def portfolio_editor(title, default_portfolio, key_prefix, max_rows=6):
     default_symbols = list(default_portfolio.keys())
     default_weights = list(default_portfolio.values())
 
-    for i in range(max_rows):
+    for i in range(rows_to_show):
         col1, col2 = st.columns([3, 1])
 
         default_symbol = default_symbols[i] if i < len(default_symbols) else ""
@@ -346,11 +357,11 @@ for i in range(num_custom_portfolios):
     with cols[i]:
         title = f"Custom {i + 1}"
         default = DEFAULT_CUSTOMS[i] if i < len(DEFAULT_CUSTOMS) else {}
+        # use portfolio_editor defaults (compact view of 4 rows, expand to 8)
         custom_portfolios[f"custom_{i}"] = portfolio_editor(
             title,
             default,
-            f"custom_{i}",
-            max_rows=6
+            f"custom_{i}"
         )
 
 # Benchmark is fixed (not shown in editor)
