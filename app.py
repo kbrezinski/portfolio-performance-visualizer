@@ -260,7 +260,7 @@ def calculate_portfolio_returns(portfolio, start_date, end_date, prices_override
 # Page logic
 # -----------------------------
 # Always show 3 custom portfolios in the top row
-num_custom_portfolios = 3
+num_custom_portfolios = 4
 
 # -----------------------------
 # Sidebar controls
@@ -417,7 +417,9 @@ for i, (name, series, pid) in enumerate(plot_items):
             y=s,
             mode="lines",
             name=name,
-            line=dict(color=color, dash='solid', width=2)
+            line=dict(color=color, dash='solid', width=2),
+            # show y values with 2 decimal places in hover; include date
+            hovertemplate="%{x|%Y-%m-%d}: %{y:.2f}<extra></extra>",
         )
     )
     plotted.append((name, color))
@@ -442,7 +444,16 @@ else:
         height=600,
         hovermode="x unified",
         template="plotly_white",
-        showlegend=False  # hide built-in legend, we'll render custom below
+        showlegend=False,  # hide built-in legend, we'll render custom below
+        xaxis=dict(
+            showgrid=True,
+            gridcolor='rgba(200,200,200,0.25)',
+            gridwidth=1
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor='rgba(200,200,200,0.15)'
+        )
     )
 
     st.plotly_chart(fig, use_container_width=True)
