@@ -3,8 +3,12 @@ import certifi
 from pathlib import Path
 
 import streamlit as st
-# set wide layout and small CSS to increase usable width
-st.set_page_config(page_title="Portfolio Visualizer", layout="wide")
+# set wide layout, page icon and small CSS to increase usable width
+st.set_page_config(
+    page_title="Stock peer analysis dashboard",
+    page_icon=":chart_with_upwards_trend:",
+    layout="wide",
+)
 st.markdown("<style>.main .block-container{max-width:95%; padding-left:1rem; padding-right:1rem;}</style>", unsafe_allow_html=True)
 
 import plotly.graph_objects as go
@@ -265,16 +269,38 @@ num_custom_portfolios = 4
 # -----------------------------
 st.sidebar.header("Settings")
 
-# Timeframe and fetch settings
-# UI: let the user select the displayed timeframe; always fetch 5 years of monthly data
-timeframe_option = st.sidebar.selectbox(
-    "View timeframe",
-    ("1M", "3M", "6M", "1Y", "3Y", "5Y"),
-    index=3,
-)
-_days = {"1M": 30, "3M": 90, "6M": 180, "1Y": 365, "3Y": 365 * 3, "5Y": 365 * 5}
-slice_start_date = datetime.today() - timedelta(days=_days.get(timeframe_option, 30))
+# Timeframe and fetch settings (pills selector)
+horizon_map = {
+    "1 Months": "1mo",
+    "3 Months": "3mo",
+    "6 Months": "6mo",
+    "1 Year": "1y",
+    "5 Years": "5y",
+    "10 Years": "10y",
+    "20 Years": "20y",
+}
 
+# map human labels to days for slicing
+_horizon_days = {
+    "1 Months": 30,
+    "3 Months": 90,
+    "6 Months": 180,
+    "1 Year": 365,
+    "5 Years": 365 * 5,
+    "10 Years": 365 * 10,
+    "20 Years": 365 * 20,
+}
+
+top_left_cell = st.sidebar.container()
+with top_left_cell:
+    # Buttons for picking time horizon
+    horizon = st.pills(
+        "Time horizon",
+        options=list(horizon_map.keys()),
+        default="6 Months",
+    )
+
+slice_start_date = datetime.today() - timedelta(days=_horizon_days.get(horizon, 180))
 # Always fetch 5 years of weekly data to allow slicing locally
 fetch_end_date = datetime.today()
 fetch_start_date = fetch_end_date - timedelta(days=365 * 5)
@@ -551,3 +577,36 @@ else:
         html += entry
     html += '</div>'
     st.markdown(html, unsafe_allow_html=True)
+
+    # Bottom metrics: best / worst over the displayed slice
+    # Compute best and worst normalized returns (fractional) and show as metrics
+    try:
+        fractions = []  # list of (fraction, name)
+        for name, color, series_obj, total_pct, annualized in plotted:
+            if total_pct is None:
+                continue
+            frac = total_pct / 100.0
+            fractions.append((frac, name))
+
+        if fractions:
+            max_norm_value = max(fractions, key=lambda x: x[0])
+            min_norm_value = min(fractions, key=lambda x: x[0])
+
+            bottom_left_cell = st.container()
+            with bottom_left_cell:
+                cols = st.columns(2)
+                # Show stock name as the main value and delta as percent change
+                cols[0].metric(
+                    "Best stock",
+                    max_norm_value[1],
+                    delta=f"{round(max_norm_value[0] * 100, 2)}%",
+                    width="content",
+                )
+                cols[1].metric(
+                    "Worst stock",
+                    min_norm_value[1],
+                    delta=f"{round(min_norm_value[0] * 100, 2)}%",
+                    width="content",
+                )
+    except Exception:
+        pass
