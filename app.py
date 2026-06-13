@@ -20,77 +20,6 @@ os.environ["SSL_CERT_FILE"] = cert_path
 os.environ["REQUESTS_CA_BUNDLE"] = cert_path
 os.environ["CURL_CA_BUNDLE"] = cert_path.replace('\\', '/') if isinstance(cert_path, str) else cert_path
 
-# Sanity check for cert bundle (show actionable warning if missing)
-try:
-    if not Path(cert_path).exists():
-        st.warning(
-            "SSL certificate bundle not found at expected path.\n"
-            "Run `python -m pip install --upgrade certifi requests urllib3 pyOpenSSL` and restart Streamlit.\n"
-            f"Expected cert path: {cert_path}"
-        )
-except Exception:
-    pass
-
-# Debug: yfinance diagnostic expander (shows raw endpoint result and yfinance fallbacks)
-with st.expander("yfinance debug: AAPL diagnostics", expanded=True):
-    st.write("certifi bundle path:", cert_path)
-    st.write("SSL_CERT_FILE env:", os.environ.get("SSL_CERT_FILE"))
-    st.write("REQUESTS_CA_BUNDLE env:", os.environ.get("REQUESTS_CA_BUNDLE"))
-    st.write("CURL_CA_BUNDLE env:", os.environ.get("CURL_CA_BUNDLE"))
-
-    import requests, traceback, json
-
-    url = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=AAPL"
-    try:
-        r = requests.get(url, timeout=15, verify=cert_path)
-        st.write("Raw requests.get status:", r.status_code)
-        st.write("Response length:", len(r.text or ""))
-        # show up to 2000 chars to avoid excessively long output
-        st.text(r.text[:2000])
-    except Exception as e:
-        st.error("requests.get failed")
-        st.text(str(e))
-        st.text(traceback.format_exc())
-
-    # Try some yfinance calls that are less scraping-dependent
-    try:
-        ticker = yf.Ticker("AAPL")
-        st.write("ticker.history (last 5):")
-        try:
-            h = ticker.history(period="5d", interval="1d", auto_adjust=True)
-            st.write(h.tail().to_dict())
-        except Exception as e:
-            st.write("ticker.history failed:", str(e))
-    except Exception as e:
-        st.error("yf.Ticker() failed")
-        st.text(str(e))
-        st.text(traceback.format_exc())
-
-    try:
-        fi = getattr(ticker, "fast_info", None)
-        st.write("ticker.fast_info:", fi)
-    except Exception:
-        pass
-
-    # Attempt to surface any raw string attributes yfinance may have stored
-    try:
-        js = None
-        for attr in ("_quote", "_info", "_yf_info", "_json", "html"):
-            val = getattr(ticker, attr, None)
-            if isinstance(val, str) and val.strip():
-                js = val
-                break
-        if js:
-            st.write("Found raw string on ticker attr (truncated):")
-            st.text(js[:2000])
-    except Exception:
-        pass
-
-
-# Alpha Vantage settings
-# (removed) - switching to yfinance.Tickers for batch fetch
-
-
 @st.cache_data(ttl=3600)
 def fetch_prices_direct(symbols, start_date, end_date, interval='1wk'):
     """
@@ -208,8 +137,9 @@ DEFAULT_BENCHMARK = {
 
 # Defaults for 3 custom portfolios (show three editors)
 DEFAULT_CUSTOMS = [
-    {"TSLA": 50.0, "AAPL": 50.0},
-    {},
+    {"VTI": 48.0, "VXUS": 24.0, "BND": 20.0, "VNQ": 8.0},
+    {"TSLA": 14.0, "AAPL": 14.0, "MSFT": 14.0, "GOOGL": 14.0, "AMZN": 14.0,
+      "META": 14.0, "NVDA": 16.0},
     {}
 ]
 
@@ -240,13 +170,10 @@ def portfolio_editor(title, default_portfolio, key_prefix, max_rows=8, visible_r
     Simple editable portfolio input area.
     Uses plain text inputs for weights (integers) to avoid spinner controls and decimals.
     """
-    # Render compact header and an expand toggle to reduce vertical space
+    # Render compact header; row count controlled by the global sidebar toggle
     st.subheader(title)
-    expand_key = f"{key_prefix}_show_all"
-    if expand_key not in st.session_state:
-        st.session_state[expand_key] = False
-    # checkbox toggles showing all rows
-    show_all = st.checkbox("Show all rows", value=st.session_state.get(expand_key, False), key=expand_key)
+    # use global session state checkbox to decide how many rows to show for all editors
+    show_all = st.session_state.get("show_all_portfolios", False)
     rows_to_show = max_rows if show_all else visible_rows
 
     portfolio = {}
@@ -344,6 +271,9 @@ st.sidebar.header("Settings")
 y_axis_mode = st.sidebar.radio("Y-axis", ("Growth of $1", "Percent", "Value ($)"))
 initial_investment = st.sidebar.number_input("Initial investment ($)", min_value=1, value=1000, step=100)
 
+# Global toggle to expand all portfolio editors (4 rows by default, 8 when checked)
+show_all_global = st.sidebar.checkbox("Show all rows for portfolios (expand to 8)", value=False, key="show_all_portfolios")
+
 # -----------------------------
 # Portfolio input
 # -----------------------------
@@ -393,7 +323,20 @@ if run_update:
 
         prices = None
         if all_symbols:
-            prices = fetch_prices_direct(sorted(all_symbols), fetch_start_date, fetch_end_date, interval='1wk')
+            # Create a deterministic cache key for the requested symbol set and fetch window
+            key_symbols = ",".join(sorted(all_symbols))
+            fetch_key = f"{key_symbols}|{fetch_start_date.date()}|{fetch_end_date.date()}|{fetch_interval}"
+            cached_key = st.session_state.get("last_prices_key")
+            cached_prices = st.session_state.get("cached_prices")
+
+            if cached_key == fetch_key and cached_prices is not None:
+                # Reuse previously fetched prices without calling the fetcher again
+                prices = cached_prices
+            else:
+                prices = fetch_prices_direct(sorted(all_symbols), fetch_start_date, fetch_end_date, interval=fetch_interval)
+                # store in session_state to avoid re-fetching on repeated Update Chart presses
+                st.session_state["last_prices_key"] = fetch_key
+                st.session_state["cached_prices"] = prices
 
         # Calculate benchmark and custom portfolios using the direct prices
         st.session_state.benchmark_returns = calculate_portfolio_returns(
