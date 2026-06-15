@@ -276,8 +276,7 @@ horizon_map = {
     "6 Months": "6mo",
     "1 Year": "1y",
     "5 Years": "5y",
-    "10 Years": "10y",
-    "20 Years": "20y",
+    "10 Years": "10y"
 }
 
 # map human labels to days for slicing
@@ -297,13 +296,13 @@ with top_left_cell:
     horizon = st.pills(
         "Time horizon",
         options=list(horizon_map.keys()),
-        default="6 Months",
+        default="1 Year",
     )
 
 slice_start_date = datetime.today() - timedelta(days=_horizon_days.get(horizon, 180))
 # Always fetch 5 years of weekly data to allow slicing locally
 fetch_end_date = datetime.today()
-fetch_start_date = fetch_end_date - timedelta(days=365 * 5)
+fetch_start_date = fetch_end_date - timedelta(days=365 * 10)
 fetch_interval = '1wk'
 
 # Y-axis mode and initial investment for value view
@@ -314,8 +313,9 @@ initial_investment = st.sidebar.number_input("Initial investment ($)", min_value
 show_all_global = st.sidebar.checkbox("Show all rows for portfolios (expand to 8)", value=False, key="show_all_portfolios")
 
 # Benchmarks: user can opt-in to plot Ken's fixed benchmark and the optional VTI-style benchmark
-include_benchmark_ken = st.sidebar.checkbox("Plot Ken's Benchmark", value=False, key="include_benchmark_ken")
-include_benchmark_v2 = st.sidebar.checkbox("Plot VTI-style Benchmark", value=False, key="include_benchmark_v2")
+# Default both benchmarks to enabled so they are selected on first load
+include_benchmark_ken = st.sidebar.checkbox("Plot Ken's Benchmark", value=True, key="include_benchmark_ken")
+include_benchmark_v2 = st.sidebar.checkbox("Plot VTI-style Benchmark", value=True, key="include_benchmark_v2")
 
 
 # -----------------------------
@@ -356,7 +356,15 @@ if "custom_returns" not in st.session_state:
 
 run_update = st.button("Update Chart", type="primary")
 
-if run_update:
+# Run an initial update on first page load so default-enabled benchmarks are plotted
+if "initialized" not in st.session_state:
+    st.session_state.initialized = False
+
+do_update = run_update or (not st.session_state.initialized)
+if not st.session_state.initialized:
+    st.session_state.initialized = True
+
+if do_update:
     with st.spinner("Loading market data (direct fetch, 1 month)..."):
         # Collect symbols from custom editors and optionally enabled benchmarks
         all_symbols = set()
@@ -512,7 +520,8 @@ for i, (name, series, pid) in enumerate(plot_items):
             hovertemplate="%{x|%Y-%m-%d}: %{y:.2f}<extra></extra>",
         )
     )
-    plotted.append((name, color, s, total_pct, annualized))
+    # store raw `series` as well for metric calculations
+    plotted.append((name, color, s, total_pct, annualized, series))
     color_idx += 1
 
 # If nothing plotted, show warning
@@ -548,24 +557,7 @@ else:
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # Render a compact statistics row under the plot
-    try:
-        stats_cols = st.columns(len(plotted))
-        for idx, item in enumerate(plotted):
-            name, color, series_obj, total_pct, annualized = item
-            col = stats_cols[idx]
-            col.markdown(f"**{name}**")
-            if total_pct is None:
-                col.write("N/A")
-            else:
-                col.write(f"Total: {total_pct:.2f}%")
-                if annualized is not None:
-                    col.write(f"Annualized: {annualized:.2f}% p.a.")
-    except Exception:
-        # fail silently if stats rendering errors
-        pass
-
-    # Render custom HTML legend for plotted traces
+    # Render custom HTML legend for plotted traces just under the plot
     html = '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px">'
     for name, color, *_ in plotted:
         entry = (
@@ -578,35 +570,57 @@ else:
     html += '</div>'
     st.markdown(html, unsafe_allow_html=True)
 
-    # Bottom metrics: best / worst over the displayed slice
-    # Compute best and worst normalized returns (fractional) and show as metrics
+    # Render per-plot metrics (Final value / % change, Variance, Worst calendar-year)
     try:
-        fractions = []  # list of (fraction, name)
-        for name, color, series_obj, total_pct, annualized in plotted:
-            if total_pct is None:
-                continue
-            frac = total_pct / 100.0
-            fractions.append((frac, name))
+        stats_cols = st.columns(len(plotted))
+        for idx, item in enumerate(plotted):
+            # unpack plotted tuple (name, color, prepared_series, total_pct, annualized, raw_series)
+            name, color, series_obj, total_pct, annualized, raw_series = item
+            col = stats_cols[idx]
+            col.markdown(f"**{name}**")
 
-        if fractions:
-            max_norm_value = max(fractions, key=lambda x: x[0])
-            min_norm_value = min(fractions, key=lambda x: x[0])
+            # Final value display depends on y-axis mode
+            final_display = "N/A"
+            try:
+                if series_obj is not None and not series_obj.empty:
+                    last = float(series_obj.iloc[-1])
+                    if y_axis_mode == "Value ($)":
+                        final_display = f"${last:,.2f}"
+                    elif y_axis_mode == "Growth of $1":
+                        final_display = f"{last:.2f}x"
+                    else:
+                        final_display = f"{last:.2f}%"
+            except Exception:
+                final_display = "N/A"
 
-            bottom_left_cell = st.container()
-            with bottom_left_cell:
-                cols = st.columns(2)
-                # Show stock name as the main value and delta as percent change
-                cols[0].metric(
-                    "Best stock",
-                    max_norm_value[1],
-                    delta=f"{round(max_norm_value[0] * 100, 2)}%",
-                    width="content",
-                )
-                cols[1].metric(
-                    "Worst stock",
-                    min_norm_value[1],
-                    delta=f"{round(min_norm_value[0] * 100, 2)}%",
-                    width="content",
-                )
+            delta_text = f"{total_pct:.2f}%" if total_pct is not None else None
+            col.metric("Final", final_display, delta=delta_text)
+
+            # Variance of period returns (use raw_series pct_change)
+            try:
+                var_text = "N/A"
+                if raw_series is not None and not raw_series.empty:
+                    rets = raw_series.pct_change().dropna()
+                    if not rets.empty:
+                        # show variance of percent returns for readability
+                        var_percent = (rets * 100).var()
+                        var_text = f"{var_percent:.4f}%"
+                col.metric("Variance", var_text)
+            except Exception:
+                col.metric("Variance", "N/A")
+
+            # Worst calendar-year performance
+            try:
+                worst_text = "N/A"
+                if raw_series is not None and not raw_series.empty:
+                    yearly = raw_series.groupby(raw_series.index.year).apply(lambda s: float(s.iloc[-1]) / float(s.iloc[0]) - 1.0)
+                    if not yearly.empty:
+                        worst_year = yearly.idxmin()
+                        worst_val = yearly.min() * 100.0
+                        worst_text = f"{worst_year}: {worst_val:.2f}%"
+                col.metric("Worst Year", worst_text)
+            except Exception:
+                col.metric("Worst Year", "N/A")
     except Exception:
+        # fail silently if stats rendering errors
         pass
