@@ -9,7 +9,24 @@ st.set_page_config(
     page_icon=":chart_with_upwards_trend:",
     layout="wide",
 )
-st.markdown("<style>.main .block-container{max-width:95%; padding-left:1rem; padding-right:1rem;}</style>", unsafe_allow_html=True)
+st.markdown(
+    """
+    <style>
+    .main .block-container{max-width:95%; padding-left:1rem; padding-right:1rem; font-size:16px;}
+    html, body, [class*="css"] { font-size:16px; }
+    h1, h2, h3 { font-size:1.2rem; }
+    /* Increase plotly and Streamlit metric fonts for readability */
+    .plotly-graph-div { font-size: 14px; }
+    [data-testid="metric-container"] { font-size: 14px; }
+    /* Make metric values more prominent when possible */
+    [data-testid="metric-container"] .stMetricValue, [data-testid="metric-container"] .metric-value { font-size:18px; font-weight:600; }
+    /* Larger buttons for visibility */
+    .stButton>button { font-size:18px; padding:14px 24px; width:100%; }
+    .stButton>button:hover { transform: translateY(-1px); }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 import plotly.graph_objects as go
 import plotly.express as px
@@ -309,8 +326,7 @@ fetch_interval = '1wk'
 y_axis_mode = st.sidebar.radio("Y-axis", ("Growth of $1", "Percent", "Value ($)"))
 initial_investment = st.sidebar.number_input("Initial investment ($)", min_value=1, value=1000, step=100)
 
-# Global toggle to expand all portfolio editors (4 rows by default, 8 when checked)
-show_all_global = st.sidebar.checkbox("Show all rows for portfolios (expand to 8)", value=False, key="show_all_portfolios")
+# Global toggle removed from sidebar. Move control to main page below portfolios.
 
 # Benchmarks: user can opt-in to plot Ken's fixed benchmark and the optional VTI-style benchmark
 # Default both benchmarks to enabled so they are selected on first load
@@ -338,6 +354,12 @@ for i in range(num_custom_portfolios):
             f"custom_{i}"
         )
 
+# Add a main-page button to expand portfolio editors to 8 rows (one-click)
+col_expand_left, _ = st.columns([3,1])
+if col_expand_left.button("Show all rows for portfolios (expand to 8)", key="expand_portfolios_main"):
+    st.session_state["show_all_portfolios"] = True
+
+
 # Benchmark is fixed (not shown in editor)
 benchmark_portfolio = DEFAULT_BENCHMARK
 
@@ -354,7 +376,8 @@ if "custom_returns" not in st.session_state:
     # store as dict keyed by custom portfolio id (custom_0, custom_1, ...)
     st.session_state.custom_returns = {}
 
-run_update = st.button("Update Chart", type="primary")
+update_left, _ = st.columns([3,1])
+run_update = update_left.button("Update Chart", type="primary", key="update_chart_main")
 
 # Run an initial update on first page load so default-enabled benchmarks are plotted
 if "initialized" not in st.session_state:
@@ -515,7 +538,7 @@ for i, (name, series, pid) in enumerate(plot_items):
             y=s,
             mode="lines",
             name=name,
-            line=dict(color=color, dash='solid', width=2),
+            line=dict(color=color, dash='solid', width=4),
             # show y values with 2 decimal places in hover; include date
             hovertemplate="%{x|%Y-%m-%d}: %{y:.2f}<extra></extra>",
         )
@@ -537,21 +560,26 @@ else:
         yaxis_title = "Value ($)"
 
     fig.update_layout(
-        title=f"Portfolio Performance Comparison",
+        title={"text": "Portfolio Performance Comparison", "font": {"size": 20}},
         xaxis_title="Date",
         yaxis_title=yaxis_title,
         height=600,
         hovermode="x unified",
         template="plotly_white",
         showlegend=False,  # hide built-in legend, we'll render custom below
+        font=dict(size=14),
         xaxis=dict(
             showgrid=True,
             gridcolor='rgba(200,200,200,0.25)',
-            gridwidth=1
+            gridwidth=1,
+            title={"text": "Date", "font": {"size": 14}},
+            tickfont=dict(size=12),
         ),
         yaxis=dict(
             showgrid=True,
-            gridcolor='rgba(200,200,200,0.15)'
+            gridcolor='rgba(200,200,200,0.15)',
+            title={"text": yaxis_title, "font": {"size": 14}},
+            tickfont=dict(size=12),
         )
     )
 
@@ -563,21 +591,77 @@ else:
         entry = (
             f"<div style='display:flex;align-items:center;gap:8px;'>"
             f"<div style='width:40px;height:12px;border-top:3px solid {color};margin-right:8px;'></div>"
-            f"<div style='font-size:14px'>{name}</div>"
+                f"<div style='font-size:16px;font-weight:600'>{name}</div>"
             f"</div>"
         )
         html += entry
     html += '</div>'
     st.markdown(html, unsafe_allow_html=True)
 
-    # Render per-plot metrics (Final value / % change, Variance, Worst calendar-year)
+    # Add a clean divider and spacing between legend and metric table
+    st.markdown("<hr style='margin-top:18px;margin-bottom:8px'>", unsafe_allow_html=True)
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    # Prepare metric values into a list so we can render them as a table
+    metrics_data = []
+    for item in plotted:
+        name, color, series_obj, total_pct, annualized, raw_series = item
+
+        # Final value
+        final_display = "N/A"
+        try:
+            if series_obj is not None and not series_obj.empty:
+                last = float(series_obj.iloc[-1])
+                if y_axis_mode == "Value ($)":
+                    final_display = f"${last:,.2f}"
+                elif y_axis_mode == "Growth of $1":
+                    final_display = f"{last:.2f}x"
+                else:
+                    final_display = f"{last:.2f}%"
+        except Exception:
+            final_display = "N/A"
+
+        delta_text = f"{total_pct:.2f}%" if total_pct is not None else None
+
+        # Variance
+        var_text = "N/A"
+        try:
+            if raw_series is not None and not raw_series.empty:
+                rets = raw_series.pct_change().dropna()
+                if not rets.empty:
+                    var_percent = (rets * 100).var()
+                    var_text = f"{var_percent:.4f}%"
+        except Exception:
+            var_text = "N/A"
+
+        # Worst calendar year
+        worst_text = "N/A"
+        try:
+            if raw_series is not None and not raw_series.empty:
+                yearly = raw_series.groupby(raw_series.index.year).apply(lambda s: float(s.iloc[-1]) / float(s.iloc[0]) - 1.0)
+                if not yearly.empty:
+                    worst_year = yearly.idxmin()
+                    worst_val = yearly.min() * 100.0
+                    worst_text = f"{worst_year}: {worst_val:.2f}%"
+        except Exception:
+            worst_text = "N/A"
+
+        metrics_data.append({
+            "name": name,
+            "color": color,
+            "final": final_display,
+            "delta": delta_text,
+            "variance": var_text,
+            "worst": worst_text,
+        })
+
+    # Render per-plot metrics using Streamlit `metric` components in columns
     try:
         stats_cols = st.columns(len(plotted))
         for idx, item in enumerate(plotted):
-            # unpack plotted tuple (name, color, prepared_series, total_pct, annualized, raw_series)
             name, color, series_obj, total_pct, annualized, raw_series = item
             col = stats_cols[idx]
-            col.markdown(f"**{name}**")
+            col.markdown(f"<div style='font-size:16px;font-weight:700;color:{color};margin-bottom:6px'>{name}</div>", unsafe_allow_html=True)
 
             # Final value display depends on y-axis mode
             final_display = "N/A"
@@ -602,7 +686,6 @@ else:
                 if raw_series is not None and not raw_series.empty:
                     rets = raw_series.pct_change().dropna()
                     if not rets.empty:
-                        # show variance of percent returns for readability
                         var_percent = (rets * 100).var()
                         var_text = f"{var_percent:.4f}%"
                 col.metric("Variance", var_text)
@@ -623,4 +706,42 @@ else:
                 col.metric("Worst Year", "N/A")
     except Exception:
         # fail silently if stats rendering errors
+        pass
+
+    # Add a divider then two pie charts side-by-side summarizing allocations
+    try:
+        st.markdown("<hr style='margin-top:18px;margin-bottom:12px'>", unsafe_allow_html=True)
+
+        pie1 = {
+            "US Equities": 48,
+            "International Equities": 24,
+            "Bonds": 20,
+            "Real Estate (REITs)": 8,
+        }
+
+        pie2 = {
+            "US Total Market": 25,
+            "Canada": 29,
+            "Developed ex-North America": 20,
+            "Emerging Markets": 10,
+            "US Small-Cap Value Tilt": 8,
+            "International Small-Cap Value Tilt": 8,
+        }
+
+        # vibrant color palettes
+        colors_vibrant1 = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
+        colors_vibrant2 = ["#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#a65628"]
+
+        c1, c2 = st.columns(2)
+        fig1 = px.pie(names=list(pie1.keys()), values=list(pie1.values()), title="VTI-Style Benchmark", color_discrete_sequence=colors_vibrant1)
+        fig1.update_traces(textposition='inside', textinfo='label+percent')
+        fig1.update_layout(legend=dict(orientation="h", y=-0.1), margin=dict(t=40,b=0))
+
+        fig2 = px.pie(names=list(pie2.keys()), values=list(pie2.values()), title="Ken's Benchmark", color_discrete_sequence=colors_vibrant2)
+        fig2.update_traces(textposition='inside', textinfo='label+percent')
+        fig2.update_layout(legend=dict(orientation="h", y=-0.1), margin=dict(t=40,b=0))
+
+        c1.plotly_chart(fig1, use_container_width=True)
+        c2.plotly_chart(fig2, use_container_width=True)
+    except Exception:
         pass
