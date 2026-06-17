@@ -23,6 +23,8 @@ st.markdown(
     /* Larger buttons for visibility */
     .stButton>button { font-size:18px; padding:14px 24px; width:100%; }
     .stButton>button:hover { transform: translateY(-1px); }
+    /* Make headers stand out */
+    .main h1, .main h2 { color: #0f172a; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -34,6 +36,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import time
 import yfinance as yf
+from streamlit_echarts import st_echarts, JsCode
 
 # Set SSL env vars so network libraries use certifi bundle
 cert_path = certifi.where()
@@ -284,16 +287,16 @@ num_custom_portfolios = 4
 # -----------------------------
 # Sidebar controls
 # -----------------------------
-st.sidebar.header("Settings")
-
 # Timeframe and fetch settings (pills selector)
 horizon_map = {
     "1 Months": "1mo",
     "3 Months": "3mo",
     "6 Months": "6mo",
+    "YTD": "ytd",
     "1 Year": "1y",
+    "3 Years": "3y",
     "5 Years": "5y",
-    "10 Years": "10y"
+    "10 Years": "10y",
 }
 
 # map human labels to days for slicing
@@ -302,19 +305,51 @@ _horizon_days = {
     "3 Months": 90,
     "6 Months": 180,
     "1 Year": 365,
+    "3 Years": 365 * 3,
     "5 Years": 365 * 5,
     "10 Years": 365 * 10,
     "20 Years": 365 * 20,
 }
 
-top_left_cell = st.sidebar.container()
-with top_left_cell:
-    # Buttons for picking time horizon
-    horizon = st.pills(
+# compute dynamic days for YTD (days since start of current year)
+try:
+    _horizon_days["YTD"] = (datetime.today() - datetime(datetime.today().year, 1, 1)).days
+except Exception:
+    _horizon_days["YTD"] = 0
+
+# Sidebar modeled after example.py (query-params enabled)
+available_symbols = sorted(set(DEFAULT_BENCHMARK.keys()) | set(SECOND_BENCHMARK.keys()) | {k for d in DEFAULT_CUSTOMS for k in d.keys()})
+with st.sidebar:
+    st.title(":material/filter_alt: Filters")
+    reporting = st.pills(
         "Time horizon",
         options=list(horizon_map.keys()),
         default="1 Year",
+        key="reporting_period",
     )
+
+    y_axis_mode = st.radio("Y-axis", ("Growth of $1", "Percent", "Value ($)"))
+    initial_investment = st.number_input("Initial investment ($)", min_value=1, value=1000, step=100)
+    benchmarks_sel = st.multiselect(
+        "Benchmarks",
+        options=["Ken's Benchmark", "VTI-style Benchmark"],
+        default=["Ken's Benchmark", "VTI-style Benchmark"],
+        key="benchmarks",
+        bind="query-params",
+    )
+    include_benchmark_ken = "Ken's Benchmark" in benchmarks_sel
+    include_benchmark_v2 = "VTI-style Benchmark" in benchmarks_sel
+    # Use Streamlit default theme for charts (keep UI stable)
+    echarts_theme = "streamlit"
+
+    # expose a small help block
+    st.markdown("---")
+    st.write("Tip: use the filters above; selections are saved in the URL.")
+
+    # (Removed page-wide theme injection to keep Streamlit default styling)
+
+# map the selected reporting period to the horizon variable used elsewhere
+horizon = reporting
 
 slice_start_date = datetime.today() - timedelta(days=_horizon_days.get(horizon, 180))
 # Always fetch 5 years of weekly data to allow slicing locally
@@ -322,16 +357,7 @@ fetch_end_date = datetime.today()
 fetch_start_date = fetch_end_date - timedelta(days=365 * 10)
 fetch_interval = '1wk'
 
-# Y-axis mode and initial investment for value view
-y_axis_mode = st.sidebar.radio("Y-axis", ("Growth of $1", "Percent", "Value ($)"))
-initial_investment = st.sidebar.number_input("Initial investment ($)", min_value=1, value=1000, step=100)
-
-# Global toggle removed from sidebar. Move control to main page below portfolios.
-
-# Benchmarks: user can opt-in to plot Ken's fixed benchmark and the optional VTI-style benchmark
-# Default both benchmarks to enabled so they are selected on first load
-include_benchmark_ken = st.sidebar.checkbox("Plot Ken's Benchmark", value=True, key="include_benchmark_ken")
-include_benchmark_v2 = st.sidebar.checkbox("Plot VTI-style Benchmark", value=True, key="include_benchmark_v2")
+# Global toggle removed from sidebar. Controls are defined in the custom sidebar below.
 
 
 # -----------------------------
@@ -358,6 +384,18 @@ for i in range(num_custom_portfolios):
 col_expand_left, _ = st.columns([3,1])
 if col_expand_left.button("Show all rows for portfolios (expand to 8)", key="expand_portfolios_main"):
     st.session_state["show_all_portfolios"] = True
+    # Attempt a safe rerun that works across Streamlit versions.
+    try:
+        # Preferred method when available
+        st.experimental_rerun()
+    except Exception:
+        # Fallback: changing query params triggers a rerun in many Streamlit versions
+        try:
+            st.experimental_set_query_params(_show_all="1")
+            # stop execution so the rerun can occur cleanly
+        except Exception:
+            # Last resort: notify the user to refresh the page
+            st.warning("Please refresh the page for the expanded rows to appear.")
 
 
 # Benchmark is fixed (not shown in editor)
@@ -567,19 +605,19 @@ else:
         hovermode="x unified",
         template="plotly_white",
         showlegend=False,  # hide built-in legend, we'll render custom below
-        font=dict(size=14),
+        font=dict(size=16),
         xaxis=dict(
             showgrid=True,
             gridcolor='rgba(200,200,200,0.25)',
             gridwidth=1,
-            title={"text": "Date", "font": {"size": 14}},
-            tickfont=dict(size=12),
+            title={"text": "Date", "font": {"size": 16}},
+            tickfont=dict(size=14),
         ),
         yaxis=dict(
             showgrid=True,
             gridcolor='rgba(200,200,200,0.15)',
-            title={"text": yaxis_title, "font": {"size": 14}},
-            tickfont=dict(size=12),
+            title={"text": yaxis_title, "font": {"size": 16}},
+            tickfont=dict(size=14),
         )
     )
 
@@ -623,19 +661,20 @@ else:
 
         delta_text = f"{total_pct:.2f}%" if total_pct is not None else None
 
-        # Variance
+        # Variance (display with 2 decimal places)
         var_text = "N/A"
         try:
             if raw_series is not None and not raw_series.empty:
                 rets = raw_series.pct_change().dropna()
                 if not rets.empty:
                     var_percent = (rets * 100).var()
-                    var_text = f"{var_percent:.4f}%"
+                    var_text = f"{var_percent:.2f}%"
         except Exception:
             var_text = "N/A"
 
-        # Worst calendar year
+        # Best and worst calendar years
         worst_text = "N/A"
+        best_text = "N/A"
         try:
             if raw_series is not None and not raw_series.empty:
                 yearly = raw_series.groupby(raw_series.index.year).apply(lambda s: float(s.iloc[-1]) / float(s.iloc[0]) - 1.0)
@@ -643,8 +682,12 @@ else:
                     worst_year = yearly.idxmin()
                     worst_val = yearly.min() * 100.0
                     worst_text = f"{worst_year}: {worst_val:.2f}%"
+                    best_year = yearly.idxmax()
+                    best_val = yearly.max() * 100.0
+                    best_text = f"{best_year}: {best_val:.2f}%"
         except Exception:
             worst_text = "N/A"
+            best_text = "N/A"
 
         metrics_data.append({
             "name": name,
@@ -652,6 +695,7 @@ else:
             "final": final_display,
             "delta": delta_text,
             "variance": var_text,
+            "best": best_text,
             "worst": worst_text,
         })
 
@@ -687,10 +731,23 @@ else:
                     rets = raw_series.pct_change().dropna()
                     if not rets.empty:
                         var_percent = (rets * 100).var()
-                        var_text = f"{var_percent:.4f}%"
+                        var_text = f"{var_percent:.2f}%"
                 col.metric("Variance", var_text)
             except Exception:
                 col.metric("Variance", "N/A")
+
+            # Best calendar-year performance (above worst)
+            try:
+                best_text = "N/A"
+                if raw_series is not None and not raw_series.empty:
+                    yearly = raw_series.groupby(raw_series.index.year).apply(lambda s: float(s.iloc[-1]) / float(s.iloc[0]) - 1.0)
+                    if not yearly.empty:
+                        best_year = yearly.idxmax()
+                        best_val = yearly.max() * 100.0
+                        best_text = f"{best_year}: {best_val:.2f}%"
+                col.metric("Best Year", best_text)
+            except Exception:
+                col.metric("Best Year", "N/A")
 
             # Worst calendar-year performance
             try:
@@ -728,20 +785,68 @@ else:
             "International Small-Cap Value Tilt": 8,
         }
 
-        # vibrant color palettes
-        colors_vibrant1 = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
-        colors_vibrant2 = ["#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#a65628"]
-
         c1, c2 = st.columns(2)
-        fig1 = px.pie(names=list(pie1.keys()), values=list(pie1.values()), title="VTI-Style Benchmark", color_discrete_sequence=colors_vibrant1)
-        fig1.update_traces(textposition='inside', textinfo='label+percent')
-        fig1.update_layout(legend=dict(orientation="h", y=-0.1), margin=dict(t=40,b=0))
 
-        fig2 = px.pie(names=list(pie2.keys()), values=list(pie2.values()), title="Ken's Benchmark", color_discrete_sequence=colors_vibrant2)
-        fig2.update_traces(textposition='inside', textinfo='label+percent')
-        fig2.update_layout(legend=dict(orientation="h", y=-0.1), margin=dict(t=40,b=0))
+        pie1_opts = {
+            "title": {"text": "VTI-Style Benchmark", "left": "center"},
+            "tooltip": {"trigger": "item", "formatter": "{b}: {c} ({d}%)"},
+            "legend": {"bottom": "0"},
+            "series": [
+                {
+                    "type": "pie",
+                    "radius": ["40%", "70%"],
+                    "avoidLabelOverlap": True,
+                    "itemStyle": {
+                        "borderRadius": 10,
+                        "borderColor": "#fff",
+                        "borderWidth": 2,
+                    },
+                    "label": {"show": True, "formatter": "{b}: {d}%"},
+                    "emphasis": {
+                        "label": {"show": True, "fontSize": "14", "fontWeight": "bold"},
+                        "itemStyle": {"shadowBlur": 10, "shadowOffsetX": 0, "shadowColor": "rgba(0, 0, 0, 0.5)"},
+                    },
+                    "data": [{"name": k, "value": v} for k, v in pie1.items()],
+                }
+            ],
+        }
 
-        c1.plotly_chart(fig1, use_container_width=True)
-        c2.plotly_chart(fig2, use_container_width=True)
+        pie2_opts = {
+            "title": {"text": "Ken's Benchmark", "left": "center"},
+            "tooltip": {"trigger": "item", "formatter": "{b}: {c} ({d}%)"},
+            "legend": {"bottom": "0"},
+            "series": [
+                {
+                    "type": "pie",
+                    "radius": ["40%", "70%"],
+                    "avoidLabelOverlap": True,
+                    "itemStyle": {
+                        "borderRadius": 10,
+                        "borderColor": "#fff",
+                        "borderWidth": 2,
+                    },
+                    "label": {"show": True, "formatter": "{b}: {d}%"},
+                    "emphasis": {
+                        "label": {"show": True, "fontSize": "14", "fontWeight": "bold"},
+                        "itemStyle": {"shadowBlur": 10, "shadowOffsetX": 0, "shadowColor": "rgba(0, 0, 0, 0.5)"},
+                    },
+                    "data": [{"name": k, "value": v} for k, v in pie2.items()],
+                }
+            ],
+        }
+
+        try:
+            with c1:
+                st_echarts(options=pie1_opts, height="450px", key="pie1", theme=echarts_theme)
+            with c2:
+                st_echarts(options=pie2_opts, height="450px", key="pie2", theme=echarts_theme)
+        except Exception:
+            # fallback to plotly if echarts fails
+            fig1 = px.pie(names=list(pie1.keys()), values=list(pie1.values()), title="VTI-Style Benchmark")
+            fig1.update_traces(textposition='inside', textinfo='label+percent')
+            fig2 = px.pie(names=list(pie2.keys()), values=list(pie2.values()), title="Ken's Benchmark")
+            fig2.update_traces(textposition='inside', textinfo='label+percent')
+            c1.plotly_chart(fig1, use_container_width=True)
+            c2.plotly_chart(fig2, use_container_width=True)
     except Exception:
         pass
