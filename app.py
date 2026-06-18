@@ -158,6 +158,39 @@ DEFAULT_BENCHMARK = {
     "XEF.TO": 20.0,
     "XIC.TO": 29.0,
 }
+# Optional second benchmark (user's VTI-style benchmark)
+# SECOND_BENCHMARK = {"VTI": 48.0, "VXUS": 24.0, "BND": 20.0, "VNQ": 8.0}
+# Optional third benchmark
+THIRD_BENCHMARK = {"VTI": 20.0, "VXUS": 20.0, "BND": 20.0, "VNQ": 20.0, "GSG": 20.0}
+# Optional fourth benchmark
+FOURTH_BENCHMARK = {"SPY": 25.0, "VB": 25.0, "VXUS": 25.0, "SHY": 25.0}
+
+# Display-only benchmark breakdowns (category labels + concentrations).
+# These are used for the pie charts and do NOT replace the ticker->weight
+# benchmark constants above which are used for price fetching and returns.
+DEFAULT_BENCHMARK_DISPLAY = {
+    "US Equities": 25.0,                 # VUN
+    "US Small Cap Value": 8.0,           # AVUV
+    "International Small Cap Value": 8.0,# AVDV
+    "International Developed": 20.0,     # XEF
+    "Emerging Markets": 10.0,            # XEC
+    "Canada Equities": 29.0,             # XIC
+}
+
+THIRD_BENCHMARK_DISPLAY = {
+    "US Equities": 20.0,          # VTI
+    "International Equities": 20.0,  # VXUS
+    "Bonds": 20.0,                # BND
+    "REITs": 20.0,                # VNQ
+    "Commodities": 20.0,          # GSG
+}
+
+FOURTH_BENCHMARK_DISPLAY = {
+    "US Large Cap": 25.0,         # SPY
+    "US Small Cap": 25.0,         # VB
+    "International Equities": 25.0,  # VXUS
+    "Short-Term Bonds/Cash": 25.0,   # SHY
+}
 
 # Defaults for 3 custom portfolios (show three editors)
 DEFAULT_CUSTOMS = [
@@ -168,8 +201,6 @@ DEFAULT_CUSTOMS = [
     {}
 ]
 
-# Optional second benchmark (user's VTI-style benchmark)
-SECOND_BENCHMARK = {"VTI": 48.0, "VXUS": 24.0, "BND": 20.0, "VNQ": 8.0}
 
 
 # Remove force-refresh and debug buttons — keep a single Update Chart button
@@ -318,7 +349,10 @@ except Exception:
     _horizon_days["YTD"] = 0
 
 # Sidebar modeled after example.py (query-params enabled)
-available_symbols = sorted(set(DEFAULT_BENCHMARK.keys()) | set(SECOND_BENCHMARK.keys()) | {k for d in DEFAULT_CUSTOMS for k in d.keys()})
+available_symbols = sorted(set(DEFAULT_BENCHMARK.keys()) | 
+                           set(THIRD_BENCHMARK.keys()) | 
+                           set(FOURTH_BENCHMARK.keys()) | 
+                           {k for d in DEFAULT_CUSTOMS for k in d.keys()})
 with st.sidebar:
     st.title(":material/filter_alt: Filters")
     reporting = st.pills(
@@ -332,13 +366,14 @@ with st.sidebar:
     initial_investment = st.number_input("Initial investment ($)", min_value=1, value=1000, step=100)
     benchmarks_sel = st.multiselect(
         "Benchmarks",
-        options=["Ken's Benchmark", "VTI-style Benchmark"],
-        default=["Ken's Benchmark", "VTI-style Benchmark"],
+        options=["Ken's Benchmark", "Mebane Faber Ivy", "Bill Bernstein"],
+        default=["Ken's Benchmark", "Mebane Faber Ivy", "Bill Bernstein"],
         key="benchmarks",
         bind="query-params",
     )
     include_benchmark_ken = "Ken's Benchmark" in benchmarks_sel
-    include_benchmark_v2 = "VTI-style Benchmark" in benchmarks_sel
+    include_benchmark_v3 = "Mebane Faber Ivy" in benchmarks_sel
+    include_benchmark_v4 = "Bill Bernstein" in benchmarks_sel
     # Use Streamlit default theme for charts (keep UI stable)
     echarts_theme = "streamlit"
 
@@ -439,9 +474,14 @@ if do_update:
             for s, w in DEFAULT_BENCHMARK.items():
                 if s and w > 0:
                     all_symbols.add(s)
-        # include optional VTI-style benchmark only if requested
-        if include_benchmark_v2:
-            for s, w in SECOND_BENCHMARK.items():
+        # include optional benchmark
+        if include_benchmark_v3:
+            for s, w in THIRD_BENCHMARK.items():
+                if s and w > 0:
+                    all_symbols.add(s)
+                            # include optional benchmark
+        if include_benchmark_v4:
+            for s, w in FOURTH_BENCHMARK.items():
                 if s and w > 0:
                     all_symbols.add(s)
 
@@ -474,16 +514,28 @@ if do_update:
         else:
             st.session_state.benchmark_returns_ken = None
 
-        # Optional VTI-style benchmark
-        if include_benchmark_v2:
-            st.session_state.benchmark_returns_v2 = calculate_portfolio_returns(
-                SECOND_BENCHMARK,
+        # Optional benchmark (THIRD)
+        if include_benchmark_v3:
+            st.session_state.benchmark_returns_v3 = calculate_portfolio_returns(
+                THIRD_BENCHMARK,
                 fetch_start_date,
                 fetch_end_date,
                 prices_override=prices
             )
         else:
-            st.session_state.benchmark_returns_v2 = None
+            st.session_state.benchmark_returns_v3 = None
+
+        # Optional benchmark (FOURTH)
+        if include_benchmark_v4:
+            st.session_state.benchmark_returns_v4 = calculate_portfolio_returns(
+                FOURTH_BENCHMARK,
+                fetch_start_date,
+                fetch_end_date,
+                prices_override=prices
+            )
+        else:
+            st.session_state.benchmark_returns_v4 = None
+
 
         for pid, portfolio in custom_portfolios.items():
             st.session_state.custom_returns[pid] = calculate_portfolio_returns(
@@ -531,11 +583,17 @@ fig = go.Figure()
 
 # build list of (label, series, id) for plotting so we can assign colors consistently
 plot_items = []
+# Descriptive labels for the benchmarks
+bench_ken_label = "Ken's Benchmark"
+bench_v3_label = "Mebane Faber Ivy"
+bench_v4_label = "Bill Bernstein"
 # Append benchmarks only if enabled
 if st.session_state.get("benchmark_returns_ken") is not None:
-    plot_items.append(("Ken's Benchmark", st.session_state.get("benchmark_returns_ken"), 'benchmark_ken'))
-if st.session_state.get("benchmark_returns_v2") is not None:
-    plot_items.append(("Balanced Benchmark", st.session_state.get("benchmark_returns_v2"), 'benchmark_v2'))
+    plot_items.append((bench_ken_label, st.session_state.get("benchmark_returns_ken"), 'benchmark_ken'))
+if st.session_state.get("benchmark_returns_v3") is not None:
+    plot_items.append((bench_v3_label, st.session_state.get("benchmark_returns_v3"), 'benchmark_v3'))
+if st.session_state.get("benchmark_returns_v4") is not None:
+    plot_items.append((bench_v4_label, st.session_state.get("benchmark_returns_v4"), 'benchmark_v4'))
 
 for pid, series in custom_returns.items():
     p = custom_portfolios.get(pid)
@@ -705,7 +763,12 @@ else:
         for idx, item in enumerate(plotted):
             name, color, series_obj, total_pct, annualized, raw_series = item
             col = stats_cols[idx]
-            col.markdown(f"<div style='font-size:16px;font-weight:700;color:{color};margin-bottom:6px'>{name}</div>", unsafe_allow_html=True)
+            # Fixed-height header to keep metric columns vertically aligned.
+            # Long names are truncated with ellipsis to avoid pushing metrics out of alignment.
+            col.markdown(
+                f"<div style='font-size:16px;font-weight:700;color:{color};margin-bottom:6px;min-height:48px;max-height:48px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:flex;align-items:center'>{name}</div>",
+                unsafe_allow_html=True,
+            )
 
             # Final value display depends on y-axis mode
             final_display = "N/A"
@@ -717,7 +780,7 @@ else:
                     elif y_axis_mode == "Growth of $1":
                         final_display = f"{last:.2f}x"
                     else:
-                        final_display = f"{last:.2f}%"
+                        final_display = f"{last:.1f}%"
             except Exception:
                 final_display = "N/A"
 
@@ -731,7 +794,7 @@ else:
                     rets = raw_series.pct_change().dropna()
                     if not rets.empty:
                         var_percent = (rets * 100).var()
-                        var_text = f"{var_percent:.2f}%"
+                        var_text = f"{var_percent:.1f}%"
                 col.metric("Variance", var_text)
             except Exception:
                 col.metric("Variance", "N/A")
@@ -744,7 +807,7 @@ else:
                     if not yearly.empty:
                         best_year = yearly.idxmax()
                         best_val = yearly.max() * 100.0
-                        best_text = f"{best_year}: {best_val:.2f}%"
+                        best_text = f"{best_val:.1f}% ({best_year})"
                 col.metric("Best Year", best_text)
             except Exception:
                 col.metric("Best Year", "N/A")
@@ -757,7 +820,7 @@ else:
                     if not yearly.empty:
                         worst_year = yearly.idxmin()
                         worst_val = yearly.min() * 100.0
-                        worst_text = f"{worst_year}: {worst_val:.2f}%"
+                        worst_text = f"{worst_val:.1f}% ({worst_year})"
                 col.metric("Worst Year", worst_text)
             except Exception:
                 col.metric("Worst Year", "N/A")
@@ -765,32 +828,27 @@ else:
         # fail silently if stats rendering errors
         pass
 
-    # Add a divider then two pie charts side-by-side summarizing allocations
+    # Add a divider then three pie charts side-by-side summarizing allocations
     try:
         st.markdown("<hr style='margin-top:18px;margin-bottom:12px'>", unsafe_allow_html=True)
 
-        pie1 = {
-            "US Equities": 48,
-            "International Equities": 24,
-            "Bonds": 20,
-            "Real Estate (REITs)": 8,
-        }
+        # Use the display-only benchmark dictionaries so pie charts show
+        # the category labels and concentrations (these do not affect
+        # portfolio return calculations which still use the ticker maps).
+        pie1 = DEFAULT_BENCHMARK_DISPLAY.copy()
+        pie2 = THIRD_BENCHMARK_DISPLAY.copy()
+        pie3 = FOURTH_BENCHMARK_DISPLAY.copy()
 
-        pie2 = {
-            "US Total Market": 25,
-            "Canada": 29,
-            "Developed ex-North America": 20,
-            "Emerging Markets": 10,
-            "US Small-Cap Value Tilt": 8,
-            "International Small-Cap Value Tilt": 8,
-        }
+        pie1_title = "Ken's Benchmark"
+        pie2_title = "Mebane Faber Ivy"
+        pie3_title = "Bill Bernstein"
 
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
 
         pie1_opts = {
-            "title": {"text": "VTI-Style Benchmark", "left": "center"},
+            "title": {"text": pie1_title, "left": "center"},
             "tooltip": {"trigger": "item", "formatter": "{b}: {c} ({d}%)"},
-            "legend": {"bottom": "0"},
+            #"legend": {"bottom": "0"},
             "series": [
                 {
                     "type": "pie",
@@ -812,9 +870,9 @@ else:
         }
 
         pie2_opts = {
-            "title": {"text": "Ken's Benchmark", "left": "center"},
+            "title": {"text": pie2_title, "left": "center"},
             "tooltip": {"trigger": "item", "formatter": "{b}: {c} ({d}%)"},
-            "legend": {"bottom": "0"},
+            #"legend": {"bottom": "0"},
             "series": [
                 {
                     "type": "pie",
@@ -835,18 +893,47 @@ else:
             ],
         }
 
+        pie3_opts = {
+            "title": {"text": pie3_title, "left": "center"},
+            "tooltip": {"trigger": "item", "formatter": "{b}: {c} ({d}%)"},
+            #"legend": {"bottom": "0"},
+            "series": [
+                {
+                    "type": "pie",
+                    "radius": ["40%", "70%"],
+                    "avoidLabelOverlap": True,
+                    "itemStyle": {
+                        "borderRadius": 10,
+                        "borderColor": "#fff",
+                        "borderWidth": 2,
+                    },
+                    "label": {"show": True, "formatter": "{b}: {d}%"},
+                    "emphasis": {
+                        "label": {"show": True, "fontSize": "14", "fontWeight": "bold"},
+                        "itemStyle": {"shadowBlur": 10, "shadowOffsetX": 0, "shadowColor": "rgba(0, 0, 0, 0.5)"},
+                    },
+                    "data": [{"name": k, "value": v} for k, v in pie3.items()],
+                }
+            ],
+        }
+
         try:
             with c1:
                 st_echarts(options=pie1_opts, height="450px", key="pie1", theme=echarts_theme)
             with c2:
                 st_echarts(options=pie2_opts, height="450px", key="pie2", theme=echarts_theme)
+            with c3:
+                st_echarts(options=pie3_opts, height="450px", key="pie3", theme=echarts_theme)
         except Exception:
             # fallback to plotly if echarts fails
-            fig1 = px.pie(names=list(pie1.keys()), values=list(pie1.values()), title="VTI-Style Benchmark")
+            fig1 = px.pie(names=list(pie1.keys()), values=list(pie1.values()), title=pie1_title)
             fig1.update_traces(textposition='inside', textinfo='label+percent')
-            fig2 = px.pie(names=list(pie2.keys()), values=list(pie2.values()), title="Ken's Benchmark")
+            fig2 = px.pie(names=list(pie2.keys()), values=list(pie2.values()), title=pie2_title)
             fig2.update_traces(textposition='inside', textinfo='label+percent')
+            fig3 = px.pie(names=list(pie3.keys()), values=list(pie3.values()), title=pie3_title)
+            fig3.update_traces(textposition='inside', textinfo='label+percent')
             c1.plotly_chart(fig1, use_container_width=True)
             c2.plotly_chart(fig2, use_container_width=True)
+            c3.plotly_chart(fig3, use_container_width=True)
     except Exception:
         pass
