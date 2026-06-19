@@ -965,9 +965,9 @@ try:
          ("Turkey",12.91),("Taiwan",12.45)],
 
         # 2023
-        [("Argentina",6.88),("Poland",15.12),("Greece",12.82),("Mexico",13.13),
-         ("Ireland",3.43),("Brazil",13.03),("Italy",9.28),("Spain",7.42),
-         ("Taiwan",61.78),("United States",11.46)],
+        [("Argentina",53.65),("Poland",50.7),("Greece",42.69),("Mexico",40.32),
+         ("Ireland",35.12),("Brazil",32.6),("Italy",30.64),("Spain",30.26),
+         ("Taiwan",29),("United States",26.05)],
 
         # 2022
         [("Turkey",105.81),("Chile",25.17),("Brazil",12.35),("Argentina",10.36),
