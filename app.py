@@ -440,6 +440,7 @@ benchmark_portfolio = DEFAULT_BENCHMARK
 # -----------------------------
 # Calculate and plot
 # -----------------------------
+st.markdown("---")
 st.header("Portfolio Performance Comparison")
 
 if "benchmark_returns" not in st.session_state:
@@ -450,7 +451,7 @@ if "custom_returns" not in st.session_state:
     st.session_state.custom_returns = {}
 
 update_left, _ = st.columns([3,1])
-run_update = update_left.button("Update Chart", type="primary", key="update_chart_main")
+run_update = update_left.button("Update Chart To Display New Ticker Changes", type="primary", key="update_chart_main")
 
 # Run an initial update on first page load so default-enabled benchmarks are plotted
 if "initialized" not in st.session_state:
