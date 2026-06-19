@@ -831,6 +831,7 @@ else:
     # Add a divider then three pie charts side-by-side summarizing allocations
     try:
         st.markdown("<hr style='margin-top:18px;margin-bottom:12px'>", unsafe_allow_html=True)
+        st.header("Benchmark Portfolios")
 
         # Use the display-only benchmark dictionaries so pie charts show
         # the category labels and concentrations (these do not affect
