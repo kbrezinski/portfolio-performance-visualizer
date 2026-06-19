@@ -937,3 +937,115 @@ else:
             c3.plotly_chart(fig3, use_container_width=True)
     except Exception:
         pass
+
+# -----------------------------
+# Bottom: Top Countries by Rank scatter chart
+# -----------------------------
+try:
+    st.markdown("---")
+    st.header("Top Countries by Rank")
+
+    # Build DataFrame for the chart
+    years = [2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019]
+
+    blocks = [
+        # 2026
+        [("South Korea",111.72),("Taiwan",61.78),("Norway",26.7),("Israel",25.14),
+         ("Thailand",23.11),("Peru",18.55),("Netherlands",17.55),("Austria",16.13),
+         ("Japan",15.14),("Poland",15.12)],
+
+        # 2025
+        [("South Korea",95.33),("Peru",86.88),("Spain",78.03),("Poland",77.34),
+         ("Greece",76.11),("South Africa",75.2),("Austria",74.2),("Colombia",68.88),
+         ("Vietnam",66.55),("Chile",65.41)],
+
+        # 2024
+        [("Argentina",63.46),("Israel",34.5),("China",28.98),("United States",23.81),
+         ("Singapore",22.1),("Peru",21.72),("Malaysia",19.46),("United Arab Emirates",15.26),
+         ("Turkey",12.91),("Taiwan",12.45)],
+
+        # 2023
+        [("Argentina",6.88),("Poland",15.12),("Greece",12.82),("Mexico",13.13),
+         ("Ireland",3.43),("Brazil",13.03),("Italy",9.28),("Spain",7.42),
+         ("Taiwan",61.78),("United States",11.46)],
+
+        # 2022
+        [("Turkey",105.81),("Chile",25.17),("Brazil",12.35),("Argentina",10.36),
+         ("Peru",2.13),("Mexico",1.26),("Thailand",1.22),("Greece",0.98),
+         ("Indonesia",-0.15),("United Kingdom",-4.38)],
+
+        # 2021
+        [("United Arab Emirates",44.1),("Saudi Arabia",33.56),("Austria",31.54),
+         ("Taiwan",28.94),("Canada",27),("United States",25.67),("Sweden",22.86),
+         ("Israel",22.84),("Netherlands",22.74),("Vietnam",22.05)],
+
+        # 2020
+        [("Denmark",42.55),("South Korea",39.44),("Taiwan",31.5),("Netherlands",23.22),
+         ("Sweden",22.26),("United States",21.03),("New Zealand",20.04),
+         ("Japan",15.41),("India",14.83),("Argentina",14.57)],
+
+        # 2019
+        [("Greece",50.2),("Taiwan",33.33),("Netherlands",32.46),("Switzerland",31.58),
+         ("United States",30.67),("Colombia",30.4),("New Zealand",30.1),
+         ("Ireland",28.14),("Brazil",27.65),("Canada",27.56)]
+    ]
+
+    data = []
+    for year, block in zip(years, blocks):
+        for rank, (country, value) in enumerate(block, start=1):
+            data.append([year, rank, country, value])
+
+    df_countries = pd.DataFrame(data, columns=["Year", "Rank", "Country", "Percent"])
+
+    # create a label that includes country name and percent for in-marker text
+    df_countries["Label"] = df_countries.apply(lambda r: f"{r['Country']}\n{r['Percent']:.2f}%", axis=1)
+
+    # create a distinct color for each country to avoid reusing similar colors
+    unique_countries = sorted(df_countries["Country"].unique())
+    try:
+        base = px.colors.qualitative.Plotly
+        n = len(unique_countries)
+        if n <= len(base):
+            palette = base[:n]
+        else:
+            import colorsys
+            palette = []
+            for i in range(n):
+                h = i / max(1, n)
+                r, g, b = colorsys.hsv_to_rgb(h, 0.65, 0.9)
+                palette.append('#%02x%02x%02x' % (int(r * 255), int(g * 255), int(b * 255)))
+        color_map = {c: palette[i] for i, c in enumerate(unique_countries)}
+    except Exception:
+        color_map = None
+
+    fig_countries = px.scatter(
+        df_countries,
+        x="Year",
+        y="Rank",
+        color="Country",
+        color_discrete_map=color_map,
+        hover_data=["Percent"],
+        text="Label",
+    )
+
+    # enlarge markers, add thin border, and use white text for contrast
+    fig_countries.update_traces(
+        marker=dict(size=42, symbol="square", line=dict(width=1, color='rgba(0,0,0,0.2)'), opacity=0.95),
+        textposition="middle center",
+        textfont=dict(color="white", size=11, family="Arial"),
+        selector=dict(mode='markers+text')
+    )
+    # show rank with 1 at top and reverse the year axis so newest -> oldest left-to-right
+    fig_countries.update_xaxes(autorange='reversed')
+    fig_countries.update_yaxes(autorange="reversed", dtick=1)
+    fig_countries.update_layout(
+        title="Top Countries by Rank (Color = Country)",
+        xaxis_title="Year",
+        yaxis_title="Rank (1 = highest)",
+        template="plotly_white",
+        height=600,
+    )
+
+    st.plotly_chart(fig_countries, use_container_width=True)
+except Exception:
+    st.warning("Failed to render Top Countries by Rank chart.")
