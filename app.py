@@ -430,7 +430,7 @@ if col_expand_left.button("Show all rows for portfolios (expand to 8)", key="exp
             # stop execution so the rerun can occur cleanly
         except Exception:
             # Last resort: notify the user to refresh the page
-            st.warning("Please refresh the page for the expanded rows to appear.")
+            st.warning("Click Again for the Expanded Rows to Appear.")
 
 
 # Benchmark is fixed (not shown in editor)
@@ -440,7 +440,7 @@ benchmark_portfolio = DEFAULT_BENCHMARK
 # -----------------------------
 # Calculate and plot
 # -----------------------------
-st.header("Performance")
+st.header("Portfolio Performance Comparison")
 
 if "benchmark_returns" not in st.session_state:
     st.session_state.benchmark_returns = None
@@ -656,7 +656,7 @@ else:
         yaxis_title = "Value ($)"
 
     fig.update_layout(
-        title={"text": "Portfolio Performance Comparison", "font": {"size": 20}},
+        #title={"text": "Portfolio Performance Comparison", "font": {"size": 20}},
         xaxis_title="Date",
         yaxis_title=yaxis_title,
         height=600,
