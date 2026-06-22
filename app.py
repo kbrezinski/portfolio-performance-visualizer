@@ -1051,3 +1051,128 @@ try:
     st.plotly_chart(fig_countries, use_container_width=True)
 except Exception:
     st.warning("Failed to render Top Countries by Rank chart.")
+
+try:
+    st.markdown("---")
+    st.header("Morning Star Equity Mix")
+
+    heatmap_data = [
+        [0, 0, 35],
+        [1, 0, 10],
+        [2, 0, 5],
+
+        [0, 1, 15],
+        [1, 1, 20],
+        [2, 1, 0],
+
+        [0, 2, 5],
+        [1, 2, 10],
+        [2, 2, 0],
+    ]
+
+    x_labels = ["Value", "Blend", "Growth"]
+    y_labels = ["Large", "Mid", "Small"]
+
+    style_box_opts = {
+
+    "legend": {
+        "data": ["Style Box"],
+        "orient": "horizontal",
+        "bottom": "0%",
+        "left": "center",
+        "textStyle": {
+            "fontSize": 24
+        }
+    },
+
+    "grid": {
+        "height": "80%",
+        "top": "5%"
+    },
+    
+    "tooltip": {
+        "textStyle": {
+            "fontSize": 16
+        }
+    },
+
+    "xAxis": {
+        "type": "category",
+        "data": ["Value", "Blend", "Growth"],
+        "axisLabel": {
+            "fontSize": 18
+        }
+    },
+
+    "yAxis": {
+        "type": "category",
+        "data": ["Large", "Mid", "Small"],
+        "inverse": True,
+        "axisLabel": {
+            "fontSize": 18
+        }
+    },
+
+    "visualMap": {
+        "type": "piecewise",
+        "pieces": [
+            {"min": 0, "max": 10, "label": "0-10%"},
+            {"min": 10, "max": 25, "label": "10-25%"},
+            {"min": 25, "max": 50, "label": "25-50%"},
+            {"min": 50, "label": ">50%"},
+        ],
+        "orient": "horizontal",
+        "bottom": 0
+    },
+
+    "series": [{
+        "type": "heatmap",
+        "data": heatmap_data,
+        "itemStyle": {
+            "borderColor": "#FFFFFF",
+            "borderWidth": 2
+        },
+
+        "label": {
+            "show": True,
+            "formatter": "{@[2]}%",
+            "fontSize": 24, 
+            "fontWeight": "bold"
+        },
+    }]
+    }
+
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        st_echarts(
+        options=style_box_opts,
+        height="550px"
+        )
+
+    with col2:
+        st.markdown("### Style Box Guide")
+
+        st.markdown("""
+        #### Size (Market Cap)
+
+        - **Large Cap**: > ~$10B market value  
+        Typically established companies with lower volatility and stable earnings.
+
+        - **Mid Cap**: approx. \\$2B - $10B  
+        Balanced mix of growth potential and stability.
+
+        - **Small Cap**: < ~$2B  
+        Higher growth potential, but more volatile and riskier.
+
+        ---
+
+        #### Style (Investment Type)
+
+        - **Value**: Undervalued relative to fundamentals (price vs earnings/book)  
+        - **Growth**: Expected to grow earnings/revenue faster than average  
+        - **Blend**: Mix of value and growth characteristics
+        """)
+
+except Exception:
+    st.warning("Failed to render Morning Star Equity Mix chart.")
