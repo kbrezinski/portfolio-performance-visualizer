@@ -159,11 +159,27 @@ DEFAULT_BENCHMARK = {
     "XIC.TO": 29.0,
 }
 # Optional second benchmark (user's VTI-style benchmark)
-# SECOND_BENCHMARK = {"VTI": 48.0, "VXUS": 24.0, "BND": 20.0, "VNQ": 8.0}
+SECOND_BENCHMARK = {
+    "AVDV": 4.2,
+    "AVUV": 7.0,
+    "VUN.TO": 21.0,
+    "XEC.TO": 5.6,
+    "XEF.TO": 11.2,
+    "XIC.TO": 21.0,
+    "ZAG.TO": 30.0,
+}
 # Optional third benchmark
-THIRD_BENCHMARK = {"VTI": 20.0, "VXUS": 20.0, "BND": 20.0, "VNQ": 20.0, "GSG": 20.0}
+THIRD_BENCHMARK = {
+    "AVDV": 3.0,
+    "AVUV": 5.0,
+    "VUN.TO": 15.0,
+    "XEC.TO": 4.0,
+    "XEF.TO": 8.0,
+    "XIC.TO": 15.0,
+    "ZAG.TO": 50.0,
+}
 # Optional fourth benchmark
-FOURTH_BENCHMARK = {"SPY": 25.0, "VB": 25.0, "VXUS": 25.0, "SHY": 25.0}
+# FOURTH_BENCHMARK = {"SPY": 25.0, "VB": 25.0, "VXUS": 25.0, "SHY": 25.0}
 
 # Display-only benchmark breakdowns (category labels + concentrations).
 # These are used for the pie charts and do NOT replace the ticker->weight
@@ -177,21 +193,6 @@ DEFAULT_BENCHMARK_DISPLAY = {
     "Canada Equities": 29.0,             # XIC
 }
 
-THIRD_BENCHMARK_DISPLAY = {
-    "US Equities": 20.0,          # VTI
-    "International Equities": 20.0,  # VXUS
-    "Bonds": 20.0,                # BND
-    "REITs": 20.0,                # VNQ
-    "Commodities": 20.0,          # GSG
-}
-
-FOURTH_BENCHMARK_DISPLAY = {
-    "US Large Cap": 25.0,         # SPY
-    "US Small Cap": 25.0,         # VB
-    "International Equities": 25.0,  # VXUS
-    "Short-Term Bonds/Cash": 25.0,   # SHY
-}
-
 # Defaults for 3 custom portfolios (show three editors)
 DEFAULT_CUSTOMS = [
     {"TSLA": 14.0, "AAPL": 14.0, "MSFT": 14.0, "GOOGL": 14.0, "AMZN": 14.0,
@@ -200,8 +201,6 @@ DEFAULT_CUSTOMS = [
     {},
     {}
 ]
-
-
 
 # Remove force-refresh and debug buttons — keep a single Update Chart button
 
@@ -350,8 +349,9 @@ except Exception:
 
 # Sidebar modeled after example.py (query-params enabled)
 available_symbols = sorted(set(DEFAULT_BENCHMARK.keys()) | 
+                           set(SECOND_BENCHMARK.keys()) |
                            set(THIRD_BENCHMARK.keys()) | 
-                           set(FOURTH_BENCHMARK.keys()) | 
+                           #set(FOURTH_BENCHMARK.keys()) | 
                            {k for d in DEFAULT_CUSTOMS for k in d.keys()})
 with st.sidebar:
     st.title(":material/filter_alt: Filters")
@@ -366,14 +366,15 @@ with st.sidebar:
     initial_investment = st.number_input("Initial investment ($)", min_value=1, value=1000, step=100)
     benchmarks_sel = st.multiselect(
         "Benchmarks",
-        options=["Ken's Benchmark", "Mebane Faber Ivy", "Bill Bernstein"],
-        default=["Ken's Benchmark", "Mebane Faber Ivy", "Bill Bernstein"],
+        options=["Ken's Benchmark", "70/30 Benchmark", "50/50 Benchmark"],
+        default=["Ken's Benchmark", "70/30 Benchmark", "50/50 Benchmark"],
         key="benchmarks",
         bind="query-params",
     )
     include_benchmark_ken = "Ken's Benchmark" in benchmarks_sel
-    include_benchmark_v3 = "Mebane Faber Ivy" in benchmarks_sel
-    include_benchmark_v4 = "Bill Bernstein" in benchmarks_sel
+    include_benchmark_v2 = "70/30 Benchmark" in benchmarks_sel
+    include_benchmark_v3 = "50/50 Benchmark" in benchmarks_sel
+    # include_benchmark_v4 = "50/50 Benchmark" in benchmarks_sel
     # Use Streamlit default theme for charts (keep UI stable)
     echarts_theme = "streamlit"
 
@@ -476,13 +477,13 @@ if do_update:
                 if s and w > 0:
                     all_symbols.add(s)
         # include optional benchmark
-        if include_benchmark_v3:
-            for s, w in THIRD_BENCHMARK.items():
+        if include_benchmark_v2:
+            for s, w in SECOND_BENCHMARK.items():
                 if s and w > 0:
                     all_symbols.add(s)
                             # include optional benchmark
-        if include_benchmark_v4:
-            for s, w in FOURTH_BENCHMARK.items():
+        if include_benchmark_v3:
+            for s, w in THIRD_BENCHMARK.items():
                 if s and w > 0:
                     all_symbols.add(s)
 
@@ -514,6 +515,17 @@ if do_update:
             )
         else:
             st.session_state.benchmark_returns_ken = None
+        
+        # Optional benchmark (THIRD)
+        if include_benchmark_v2:
+            st.session_state.benchmark_returns_v2 = calculate_portfolio_returns(
+                SECOND_BENCHMARK,
+                fetch_start_date,
+                fetch_end_date,
+                prices_override=prices
+            )
+        else:
+            st.session_state.benchmark_returns_v2 = None
 
         # Optional benchmark (THIRD)
         if include_benchmark_v3:
@@ -527,15 +539,15 @@ if do_update:
             st.session_state.benchmark_returns_v3 = None
 
         # Optional benchmark (FOURTH)
-        if include_benchmark_v4:
-            st.session_state.benchmark_returns_v4 = calculate_portfolio_returns(
-                FOURTH_BENCHMARK,
-                fetch_start_date,
-                fetch_end_date,
-                prices_override=prices
-            )
-        else:
-            st.session_state.benchmark_returns_v4 = None
+        #if include_benchmark_v4:
+        #    st.session_state.benchmark_returns_v4 = calculate_portfolio_returns(
+        #        FOURTH_BENCHMARK,
+        #        fetch_start_date,
+        #        fetch_end_date,
+        #        prices_override=prices
+        #    )
+        #else:
+        #    st.session_state.benchmark_returns_v4 = None
 
 
         for pid, portfolio in custom_portfolios.items():
@@ -586,15 +598,15 @@ fig = go.Figure()
 plot_items = []
 # Descriptive labels for the benchmarks
 bench_ken_label = "Ken's Benchmark"
-bench_v3_label = "Mebane Faber Ivy"
-bench_v4_label = "Bill Bernstein"
+bench_v2_label = "70/30 Benchmark"
+bench_v3_label = "50/50 Benchmark"
 # Append benchmarks only if enabled
 if st.session_state.get("benchmark_returns_ken") is not None:
     plot_items.append((bench_ken_label, st.session_state.get("benchmark_returns_ken"), 'benchmark_ken'))
+if st.session_state.get("benchmark_returns_v2") is not None:
+    plot_items.append((bench_v2_label, st.session_state.get("benchmark_returns_v2"), 'benchmark_v2'))
 if st.session_state.get("benchmark_returns_v3") is not None:
     plot_items.append((bench_v3_label, st.session_state.get("benchmark_returns_v3"), 'benchmark_v3'))
-if st.session_state.get("benchmark_returns_v4") is not None:
-    plot_items.append((bench_v4_label, st.session_state.get("benchmark_returns_v4"), 'benchmark_v4'))
 
 for pid, series in custom_returns.items():
     p = custom_portfolios.get(pid)
@@ -829,26 +841,21 @@ else:
         # fail silently if stats rendering errors
         pass
 
-    # Add a divider then three pie charts side-by-side summarizing allocations
+    # Add a divider then pie chart for Ken's Benchmark
+    # (THIRD_BENCHMARK_DISPLAY and FOURTH_BENCHMARK_DISPLAY are available as placeholders for future asset mix)
     try:
         st.markdown("<hr style='margin-top:18px;margin-bottom:12px'>", unsafe_allow_html=True)
-        st.header("Benchmark Portfolios")
+        st.header("Ken's Benchmark Portfolio")
 
         # Use the display-only benchmark dictionaries so pie charts show
         # the category labels and concentrations (these do not affect
         # portfolio return calculations which still use the ticker maps).
         pie1 = DEFAULT_BENCHMARK_DISPLAY.copy()
-        pie2 = THIRD_BENCHMARK_DISPLAY.copy()
-        pie3 = FOURTH_BENCHMARK_DISPLAY.copy()
 
-        pie1_title = "Ken's Benchmark"
-        pie2_title = "Mebane Faber Ivy"
-        pie3_title = "Bill Bernstein"
-
-        c1, c2, c3 = st.columns(3)
+        c1 = st.columns(1)[0]
 
         pie1_opts = {
-            "title": {"text": pie1_title, "left": "center"},
+            "title": {"text": "Asset Allocation", "left": "center"},
             "tooltip": {"trigger": "item", "formatter": "{b}: {c} ({d}%)"},
             #"legend": {"bottom": "0"},
             "series": [
@@ -871,72 +878,98 @@ else:
             ],
         }
 
-        pie2_opts = {
-            "title": {"text": pie2_title, "left": "center"},
-            "tooltip": {"trigger": "item", "formatter": "{b}: {c} ({d}%)"},
-            #"legend": {"bottom": "0"},
-            "series": [
-                {
-                    "type": "pie",
-                    "radius": ["40%", "70%"],
-                    "avoidLabelOverlap": True,
-                    "itemStyle": {
-                        "borderRadius": 10,
-                        "borderColor": "#fff",
-                        "borderWidth": 2,
-                    },
-                    "label": {"show": True, "formatter": "{b}: {d}%"},
-                    "emphasis": {
-                        "label": {"show": True, "fontSize": "14", "fontWeight": "bold"},
-                        "itemStyle": {"shadowBlur": 10, "shadowOffsetX": 0, "shadowColor": "rgba(0, 0, 0, 0.5)"},
-                    },
-                    "data": [{"name": k, "value": v} for k, v in pie2.items()],
-                }
-            ],
-        }
-
-        pie3_opts = {
-            "title": {"text": pie3_title, "left": "center"},
-            "tooltip": {"trigger": "item", "formatter": "{b}: {c} ({d}%)"},
-            #"legend": {"bottom": "0"},
-            "series": [
-                {
-                    "type": "pie",
-                    "radius": ["40%", "70%"],
-                    "avoidLabelOverlap": True,
-                    "itemStyle": {
-                        "borderRadius": 10,
-                        "borderColor": "#fff",
-                        "borderWidth": 2,
-                    },
-                    "label": {"show": True, "formatter": "{b}: {d}%"},
-                    "emphasis": {
-                        "label": {"show": True, "fontSize": "14", "fontWeight": "bold"},
-                        "itemStyle": {"shadowBlur": 10, "shadowOffsetX": 0, "shadowColor": "rgba(0, 0, 0, 0.5)"},
-                    },
-                    "data": [{"name": k, "value": v} for k, v in pie3.items()],
-                }
-            ],
-        }
-
         try:
-            with c1:
+            col_left, col_mid, col_right = st.columns(3)
+            with col_left:
                 st_echarts(options=pie1_opts, height="450px", key="pie1", theme=echarts_theme)
-            with c2:
-                st_echarts(options=pie2_opts, height="450px", key="pie2", theme=echarts_theme)
-            with c3:
-                st_echarts(options=pie3_opts, height="450px", key="pie3", theme=echarts_theme)
+            with col_mid:
+                option = {
+                    "title": {"text": "Sector Exposure", "left": "center"},
+                    "toolbox": {
+                        "show": True,
+                        "feature": {
+                            "mark": {"show": True},
+                            "dataView": {"show": True, "readOnly": False},
+                            "restore": {"show": True},
+                            "saveAsImage": {"show": True},
+                        },
+                    },
+                    "series": [
+                        {   
+                            "name": "Sector Exposure",
+                            "type": "pie",
+                            "radius": [80, 180],
+                            "center": ["50%", "50%"],
+                            "roseType": "area",
+                            "itemStyle": {"borderRadius": 2},
+                            "label": {
+                                "position": "outside",
+                                "alignTo": "labelLine",
+                                "edgeDistance": 2
+                            },
+                            "labelLine": {
+                                "length": 6,
+                                "length2": 6,
+                                "smooth": True
+                            },
+                            "labelLayout": {
+                                "hideOverlap": False,
+                                "moveOverlap": "shiftY"
+                            },
+                            "data": [
+                                {"value": 22.0, "name": "Financials"},
+                                {"value": 14.1, "name": "Technology"},
+                                {"value": 13.0, "name": "Industrials"},
+                                {"value": 8.1, "name": "Energy"},
+                                {"value": 6.4, "name": "Healthcare"},
+                                {"value": 6.0, "name": "Materials"},
+                                {"value": 5.6, "name": "Consumer Discretionary"},
+                                {"value": 4.7, "name": "Consumer Staples"},
+                                {"value": 4.4, "name": "Communication Services"},
+                                {"value": 3.8, "name": "Utilities"},
+                                {"value": 2.6, "name": "Real Estate"},
+                            ],
+                        }
+                    ],
+                }
+                st_echarts(options=option, height="500px")
+            with col_right:
+                options = {
+                    "title": {"text": "Market Capitalization", "left": "center"},
+                    "tooltip": {"trigger": "item"},
+                    "series": [
+                        {
+                            "name": "Market Cap Exposure",
+                            "type": "pie",
+                            "radius": ["40%", "70%"],
+                            "center": ["50%", "70%"],
+                            "startAngle": 180,
+                            "endAngle": 360,
+                            "label": {
+                                "formatter": "{b}: {c}%",
+                            },
+                            "data": [
+                                {"value": 58.5, "name": "Large Cap"},
+                                {"value": 14.0, "name": "Mid Cap"},
+                                {"value": 16.0, "name": "Small Cap Value"},
+                                {"value": 10.0, "name": "Emerging Markets"},
+                                {"value": 1.5, "name": "Other"},
+                            ],
+                        }
+                    ],
+                }
+                st_echarts(options=options, height="500px")
         except Exception:
             # fallback to plotly if echarts fails
             fig1 = px.pie(names=list(pie1.keys()), values=list(pie1.values()), title=pie1_title)
             fig1.update_traces(textposition='inside', textinfo='label+percent')
-            fig2 = px.pie(names=list(pie2.keys()), values=list(pie2.values()), title=pie2_title)
-            fig2.update_traces(textposition='inside', textinfo='label+percent')
-            fig3 = px.pie(names=list(pie3.keys()), values=list(pie3.values()), title=pie3_title)
-            fig3.update_traces(textposition='inside', textinfo='label+percent')
-            c1.plotly_chart(fig1, use_container_width=True)
-            c2.plotly_chart(fig2, use_container_width=True)
-            c3.plotly_chart(fig3, use_container_width=True)
+            col_left, col_mid, col_right = st.columns(3)
+            with col_left:
+                col_left.plotly_chart(fig1, use_container_width=True)
+            with col_mid:
+                st.write("Sector allocation chart unavailable")
+            with col_right:
+                st.write("Market cap chart unavailable")
     except Exception:
         pass
 
@@ -1054,7 +1087,7 @@ except Exception:
 
 try:
     st.markdown("---")
-    st.header("Morning Star Equity Mix")
+    st.header("Example Morning Star Equity Mix")
 
     heatmap_data = [
         [0, 0, 35],
@@ -1078,21 +1111,25 @@ try:
     "legend": {
         "data": ["Style Box"],
         "orient": "horizontal",
-        "bottom": "0%",
+        "bottom": "2%",
         "left": "center",
         "textStyle": {
-            "fontSize": 24
+            "fontSize": 14,
+            "color": "#F5F5F5"
         }
     },
 
     "grid": {
-        "height": "80%",
-        "top": "5%"
+        "height": "70%",
+        "top": "10%",
+        "left": "12%",
+        "right": "6%"
     },
     
     "tooltip": {
         "textStyle": {
-            "fontSize": 16
+            "fontSize": 14,
+            "color": "#F5F5F5"
         }
     },
 
@@ -1100,7 +1137,8 @@ try:
         "type": "category",
         "data": ["Value", "Blend", "Growth"],
         "axisLabel": {
-            "fontSize": 18
+            "fontSize": 14,
+            "color": "#F5F5F5"
         }
     },
 
@@ -1109,7 +1147,8 @@ try:
         "data": ["Large", "Mid", "Small"],
         "inverse": True,
         "axisLabel": {
-            "fontSize": 18
+            "fontSize": 14,
+            "color": "#F5F5F5"
         }
     },
 
@@ -1122,7 +1161,10 @@ try:
             {"min": 50, "label": ">50%"},
         ],
         "orient": "horizontal",
-        "bottom": 0
+        "bottom": 0,
+        "textStyle": {
+            "color": "#F5F5F5"
+        }
     },
 
     "series": [{
@@ -1142,12 +1184,12 @@ try:
     }]
     }
 
-    col1, col2 = st.columns([1, 1])
+    col1, col2 = st.columns([0.7, 1.3])
 
     with col1:
         st_echarts(
-        options=style_box_opts,
-        height="550px"
+            options=style_box_opts,
+            height="400px"
         )
 
     with col2:
