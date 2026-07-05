@@ -464,13 +464,13 @@ with st.sidebar:
                         "valueAnimation": True,
                         "formatter": "{value}%",
                         "color": "#FFFFFF",
-                        "fontSize": 20,
+                        "fontSize": 40,
                         "offsetCenter": [0, "10%"]
                     },
 
                     "data": [
                         {
-                            "value": round(pct, 2),
+                        "value": round(pct, 2),
                             
                         }
                     ],
