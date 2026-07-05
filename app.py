@@ -38,6 +38,16 @@ import time
 import yfinance as yf
 from streamlit_echarts import st_echarts, JsCode
 
+try:
+    from streamlit_extras.avatar import avatar
+except ImportError:  # pragma: no cover - optional dependency fallback
+    avatar = None
+
+try:
+    from streamlit_extras.buy_me_a_coffee import button
+except ImportError:  # pragma: no cover - optional dependency fallback
+    button = None
+
 # Set SSL env vars so network libraries use certifi bundle
 cert_path = certifi.where()
 os.environ["SSL_CERT_FILE"] = cert_path
@@ -157,6 +167,7 @@ DEFAULT_BENCHMARK = {
     "XEC.TO": 10.0,
     "XEF.TO": 20.0,
     "XIC.TO": 29.0,
+    "ZAG.TO": 0.0,
 }
 # Optional second benchmark (user's VTI-style benchmark)
 SECOND_BENCHMARK = {
@@ -178,8 +189,16 @@ THIRD_BENCHMARK = {
     "XIC.TO": 15.0,
     "ZAG.TO": 50.0,
 }
-# Optional fourth benchmark
-# FOURTH_BENCHMARK = {"SPY": 25.0, "VB": 25.0, "VXUS": 25.0, "SHY": 25.0}
+# Optional fourth benchmark (Tech Stocks)
+FOURTH_BENCHMARK = {
+    "TSLA": 14.0,
+    "AAPL": 14.0,
+    "MSFT": 14.0,
+    "GOOGL": 14.0,
+    "AMZN": 14.0,
+    "META": 14.0,
+    "NVDA": 16.0,
+}
 
 # Display-only benchmark breakdowns (category labels + concentrations).
 # These are used for the pie charts and do NOT replace the ticker->weight
@@ -191,12 +210,12 @@ DEFAULT_BENCHMARK_DISPLAY = {
     "International Developed": 20.0,     # XEF
     "Emerging Markets": 10.0,            # XEC
     "Canada Equities": 29.0,             # XIC
+    "Canadian Bonds": 0.0,               # ZAG
 }
 
 # Defaults for 3 custom portfolios (show three editors)
 DEFAULT_CUSTOMS = [
-    {"TSLA": 14.0, "AAPL": 14.0, "MSFT": 14.0, "GOOGL": 14.0, "AMZN": 14.0,
-      "META": 14.0, "NVDA": 16.0},
+    {"SPY": 100.0},
     {},
     {},
     {}
@@ -350,11 +369,24 @@ except Exception:
 # Sidebar modeled after example.py (query-params enabled)
 available_symbols = sorted(set(DEFAULT_BENCHMARK.keys()) | 
                            set(SECOND_BENCHMARK.keys()) |
-                           set(THIRD_BENCHMARK.keys()) | 
-                           #set(FOURTH_BENCHMARK.keys()) | 
+                           set(THIRD_BENCHMARK.keys()) |
+                           set(FOURTH_BENCHMARK.keys()) |
                            {k for d in DEFAULT_CUSTOMS for k in d.keys()})
 with st.sidebar:
-    st.title(":material/filter_alt: Filters")
+    avatar_image = "avatar.jpeg"
+    if avatar is not None:
+        avatar(avatar_image, height=100, border=True,
+               label="Kenneth Brezinski",
+               caption="Financial Advisor Student",)
+    else:
+        st.image(avatar_image, width=60)
+
+    if button is not None:
+        button(username="fake-username", floating=False, width=221)
+    else:
+        st.caption("Buy Me a Coffee button unavailable")
+
+    st.title("🔎 Filters")
     reporting = st.pills(
         "Time horizon",
         options=list(horizon_map.keys()),
@@ -366,7 +398,7 @@ with st.sidebar:
     initial_investment = st.number_input("Initial investment ($)", min_value=1, value=1000, step=100)
     benchmarks_sel = st.multiselect(
         "Benchmarks",
-        options=["Ken's Benchmark", "70/30 Benchmark", "50/50 Benchmark"],
+        options=["Ken's Benchmark", "70/30 Benchmark", "50/50 Benchmark", "Tech Stocks"],
         default=["Ken's Benchmark", "70/30 Benchmark", "50/50 Benchmark"],
         key="benchmarks",
         bind="query-params",
@@ -374,13 +406,95 @@ with st.sidebar:
     include_benchmark_ken = "Ken's Benchmark" in benchmarks_sel
     include_benchmark_v2 = "70/30 Benchmark" in benchmarks_sel
     include_benchmark_v3 = "50/50 Benchmark" in benchmarks_sel
-    # include_benchmark_v4 = "50/50 Benchmark" in benchmarks_sel
+    include_benchmark_v4 = "Tech Stocks" in benchmarks_sel
     # Use Streamlit default theme for charts (keep UI stable)
     echarts_theme = "streamlit"
 
     # expose a small help block
     st.markdown("---")
-    st.write("Tip: use the filters above; selections are saved in the URL.")
+    st.write("💡 Tip: use the filters above; selections are saved in the URL.")
+
+    def render_hours_gauge():
+
+        hours = 12
+        target = 5_250
+        pct = (hours / target) * 100
+
+        option = {
+            "title": {
+                "text": "Hours Logged for \nCFP Designation",
+                "left": "center",
+                "top": "10%",
+                "textStyle": {
+                    "color": "#FFFFFF",
+                    "fontSize": 24
+                }
+            },
+
+            "series": [
+                {
+                    "type": "gauge",
+
+                    "min": 0,
+                    "max": 100,
+
+                    "startAngle": 90,
+                    "endAngle": -270,
+
+                    "pointer": {"show": False},
+
+                    "progress": {
+                        "show": True,
+                        "roundCap": True,
+                        "width": 18
+                    },
+
+                    "axisLine": {
+                        "lineStyle": {
+                            "width": 18,
+                            "color": [[1, "#FFFFFF",]]
+                        }
+                    },
+
+                    "axisTick": {"show": False},
+                    "splitLine": {"show": False},
+                    "axisLabel": {"show": False},
+
+                    "detail": {
+                        "valueAnimation": True,
+                        "formatter": "{value}%",
+                        "color": "#FFFFFF",
+                        "fontSize": 20,
+                        "offsetCenter": [0, "10%"]
+                    },
+
+                    "data": [
+                        {
+                            "value": round(pct, 2),
+                            
+                        }
+                    ],
+                }
+            ],
+
+            "graphic": [
+                {
+                    "type": "text",
+                    "left": "center",
+                    "top": "60%",
+                    "style": {
+                        "text": f"{hours} / {target} hrs",
+                        "fill": "#BBBBBB",
+                        "fontSize": 12
+                    }
+                }
+            ]
+        }
+
+        st_echarts(options=option, height="450px", key="hours_gauge")
+
+
+    render_hours_gauge()
 
     # (Removed page-wide theme injection to keep Streamlit default styling)
 
@@ -399,7 +513,7 @@ fetch_interval = '1wk'
 # -----------------------------
 # Portfolio input
 # -----------------------------
-st.header("Portfolio Configuration")
+st.header("📋 Portfolio Configuration")
 
 # Layout: show only custom portfolios (benchmark is fixed and not editable)
 cols = st.columns(num_custom_portfolios)
@@ -418,7 +532,7 @@ for i in range(num_custom_portfolios):
 
 # Add a main-page button to expand portfolio editors to 8 rows (one-click)
 col_expand_left, _ = st.columns([3,1])
-if col_expand_left.button("Show all rows for portfolios (expand to 8)", key="expand_portfolios_main"):
+if col_expand_left.button("🧩 Show all rows for portfolios (expand to 8)", key="expand_portfolios_main"):
     st.session_state["show_all_portfolios"] = True
     # Attempt a safe rerun that works across Streamlit versions.
     try:
@@ -442,7 +556,7 @@ benchmark_portfolio = DEFAULT_BENCHMARK
 # Calculate and plot
 # -----------------------------
 st.markdown("---")
-st.header("Portfolio Performance Comparison")
+st.header("📈 Portfolio Performance Comparison")
 
 if "benchmark_returns" not in st.session_state:
     st.session_state.benchmark_returns = None
@@ -452,7 +566,7 @@ if "custom_returns" not in st.session_state:
     st.session_state.custom_returns = {}
 
 update_left, _ = st.columns([3,1])
-run_update = update_left.button("Update Chart To Display New Ticker Changes", type="primary", key="update_chart_main")
+run_update = update_left.button("🔄 Update chart to display new ticker changes", type="primary", key="update_chart_main")
 
 # Run an initial update on first page load so default-enabled benchmarks are plotted
 if "initialized" not in st.session_state:
@@ -484,6 +598,10 @@ if do_update:
                             # include optional benchmark
         if include_benchmark_v3:
             for s, w in THIRD_BENCHMARK.items():
+                if s and w > 0:
+                    all_symbols.add(s)
+        if include_benchmark_v4:
+            for s, w in FOURTH_BENCHMARK.items():
                 if s and w > 0:
                     all_symbols.add(s)
 
@@ -538,17 +656,16 @@ if do_update:
         else:
             st.session_state.benchmark_returns_v3 = None
 
-        # Optional benchmark (FOURTH)
-        #if include_benchmark_v4:
-        #    st.session_state.benchmark_returns_v4 = calculate_portfolio_returns(
-        #        FOURTH_BENCHMARK,
-        #        fetch_start_date,
-        #        fetch_end_date,
-        #        prices_override=prices
-        #    )
-        #else:
-        #    st.session_state.benchmark_returns_v4 = None
-
+        # Optional benchmark (Tech Stocks)
+        if include_benchmark_v4:
+            st.session_state.benchmark_returns_v4 = calculate_portfolio_returns(
+                FOURTH_BENCHMARK,
+                fetch_start_date,
+                fetch_end_date,
+                prices_override=prices
+            )
+        else:
+            st.session_state.benchmark_returns_v4 = None
 
         for pid, portfolio in custom_portfolios.items():
             st.session_state.custom_returns[pid] = calculate_portfolio_returns(
@@ -600,6 +717,7 @@ plot_items = []
 bench_ken_label = "Ken's Benchmark"
 bench_v2_label = "70/30 Benchmark"
 bench_v3_label = "50/50 Benchmark"
+bench_v4_label = "Tech Stocks"
 # Append benchmarks only if enabled
 if st.session_state.get("benchmark_returns_ken") is not None:
     plot_items.append((bench_ken_label, st.session_state.get("benchmark_returns_ken"), 'benchmark_ken'))
@@ -607,6 +725,8 @@ if st.session_state.get("benchmark_returns_v2") is not None:
     plot_items.append((bench_v2_label, st.session_state.get("benchmark_returns_v2"), 'benchmark_v2'))
 if st.session_state.get("benchmark_returns_v3") is not None:
     plot_items.append((bench_v3_label, st.session_state.get("benchmark_returns_v3"), 'benchmark_v3'))
+if st.session_state.get("benchmark_returns_v4") is not None:
+    plot_items.append((bench_v4_label, st.session_state.get("benchmark_returns_v4"), 'benchmark_v4'))
 
 for pid, series in custom_returns.items():
     p = custom_portfolios.get(pid)
@@ -845,7 +965,7 @@ else:
     # (THIRD_BENCHMARK_DISPLAY and FOURTH_BENCHMARK_DISPLAY are available as placeholders for future asset mix)
     try:
         st.markdown("<hr style='margin-top:18px;margin-bottom:12px'>", unsafe_allow_html=True)
-        st.header("Ken's Benchmark Portfolio")
+        st.header("🏦 Ken's Benchmark Portfolio")
 
         # Use the display-only benchmark dictionaries so pie charts show
         # the category labels and concentrations (these do not affect
@@ -879,10 +999,10 @@ else:
         }
 
         try:
-            col_left, col_mid, col_right = st.columns(3)
-            with col_left:
+            row1_left, row1_right = st.columns(2)
+            with row1_left:
                 st_echarts(options=pie1_opts, height="450px", key="pie1", theme=echarts_theme)
-            with col_mid:
+            with row1_right:
                 option = {
                     "title": {"text": "Sector Exposure", "left": "center"},
                     "toolbox": {
@@ -933,7 +1053,9 @@ else:
                     ],
                 }
                 st_echarts(options=option, height="500px")
-            with col_right:
+
+            row2_left, row2_right = st.columns(2)
+            with row2_left:
                 options = {
                     "title": {"text": "Market Capitalization", "left": "center"},
                     "tooltip": {"trigger": "item"},
@@ -949,27 +1071,94 @@ else:
                                 "formatter": "{b}: {c}%",
                             },
                             "data": [
-                                {"value": 58.5, "name": "Large Cap"},
-                                {"value": 14.0, "name": "Mid Cap"},
-                                {"value": 16.0, "name": "Small Cap Value"},
-                                {"value": 10.0, "name": "Emerging Markets"},
-                                {"value": 1.5, "name": "Other"},
+                                {"value": 37.0, "name": "Mega Cap"},
+                                {"value": 38.0, "name": "Large Cap"},
+                                {"value": 11.0, "name": "Mid Cap"},
+                                {"value": 14.0, "name": "Small Cap"},
+        
                             ],
                         }
                     ],
                 }
                 st_echarts(options=options, height="500px")
+            with row2_right:
+                radar_option = {
+                    "title": {
+                        "text": "Portfolio Allocation Comparison",
+                        "left": "center"
+                    },
+                    "legend": {
+                        "data": ["100/0", "70/30", "50/50"],
+                        "top": "bottom",
+                        "textStyle": {"color": "#F5F5F5", "fontSize": 12}
+                    },
+                    "tooltip": {"trigger": "item"},
+                    "radar": {
+                        "center": ["50%", "50%"],
+                        "radius": "70%",
+                        "indicator": [
+                            {"name": "US Equities", "max": 50},
+                            {"name": "US Small Cap Value", "max": 50},
+                            {"name": "International Small Cap Value", "max": 50},
+                            {"name": "International Developed", "max": 50},
+                            {"name": "Emerging Markets", "max": 50},
+                            {"name": "Canada Equities", "max": 50},
+                            {"name": "Canadian Bonds", "max": 50},
+                        ],
+                        "name": {
+                            "textStyle": {"color": "#F5F5F5", "fontSize": 12}
+                        }
+                    },
+                    "series": [
+                        {
+                            "name": "Allocation",
+                            "type": "radar",
+                            "symbol": "circle",
+                            "symbolSize": 8,
+                            "lineStyle": {"width": 3},
+                            "areaStyle": {"opacity": 0.2},
+                            "emphasis": {"focus": "series"},
+                            "data": [
+                                {
+                                    "value": [25.0, 8.0, 8.0, 20.0, 10.0, 29.0, 0.0],
+                                    "name": "100/0",
+                                    "itemStyle": {"color": "#ff4d4f"},
+                                    "lineStyle": {"color": "#ff4d4f"},
+                                    "areaStyle": {"color": "#ff4d4f"},
+                                },
+                                {
+                                    "value": [21.0, 7.0, 4.2, 11.2, 5.6, 21.0, 30.0],
+                                    "name": "70/30",
+                                    "itemStyle": {"color": "#2f54eb"},
+                                    "lineStyle": {"color": "#2f54eb"},
+                                    "areaStyle": {"color": "#2f54eb"},
+                                },
+                                {
+                                    "value": [15.0, 5.0, 3.0, 8.0, 4.0, 15.0, 50.0],
+                                    "name": "50/50",
+                                    "itemStyle": {"color": "#13c2c2"},
+                                    "lineStyle": {"color": "#13c2c2"},
+                                    "areaStyle": {"color": "#13c2c2"},
+                                },
+                            ],
+                        }
+                    ],
+                }
+                st_echarts(radar_option, height="500px")
         except Exception:
             # fallback to plotly if echarts fails
             fig1 = px.pie(names=list(pie1.keys()), values=list(pie1.values()), title=pie1_title)
             fig1.update_traces(textposition='inside', textinfo='label+percent')
-            col_left, col_mid, col_right = st.columns(3)
-            with col_left:
-                col_left.plotly_chart(fig1, use_container_width=True)
-            with col_mid:
+            row1_left, row1_right = st.columns(2)
+            with row1_left:
+                row1_left.plotly_chart(fig1, use_container_width=True)
+            with row1_right:
                 st.write("Sector allocation chart unavailable")
-            with col_right:
+            row2_left, row2_right = st.columns(2)
+            with row2_left:
                 st.write("Market cap chart unavailable")
+            with row2_right:
+                st.write("Portfolio allocation comparison chart unavailable")
     except Exception:
         pass
 
@@ -978,7 +1167,7 @@ else:
 # -----------------------------
 try:
     st.markdown("---")
-    st.header("Top Countries by Rank")
+    st.header("🌍 Top Countries by Rank")
 
     # Build DataFrame for the chart
     years = [2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019]
@@ -1087,7 +1276,7 @@ except Exception:
 
 try:
     st.markdown("---")
-    st.header("Example Morning Star Equity Mix")
+    st.header("⭐ Example Morning Star Equity Mix")
 
     heatmap_data = [
         [0, 0, 35],
