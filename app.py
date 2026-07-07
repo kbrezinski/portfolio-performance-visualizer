@@ -261,7 +261,7 @@ def portfolio_editor(title, default_portfolio, key_prefix, max_rows=8, visible_r
             ).strip().upper()
 
             weight_str = col2.text_input(
-                f"Weight %",
+                f"%",
                 value=st.session_state.get(f"{key_prefix}_weight_{i}", str(default_weight_int)),
                 key=f"{key_prefix}_weight_{i}"
             ).strip()
@@ -515,15 +515,32 @@ fetch_interval = '1wk'
 # -----------------------------
 st.header("📋 Portfolio Configuration")
 
-# Layout: show only custom portfolios (benchmark is fixed and not editable)
-cols = st.columns(num_custom_portfolios)
+with st.expander("📚 New here? Here's how to build your portfolio!", expanded=False):
+    st.markdown(
+        """
+        💼 **Step 1:** Enter a stock or ETF ticker in each **Symbol** field (e.g. `AAPL`, `MSFT`, `TSLA`, `VOO`).
+
+        📊 **Step 2:** Assign a percentage weight to each holding. Don't worry if the total isn't exactly **100%**—the app will automatically normalize your portfolio. 
+        
+        🏛️ **SPY is included by default as a benchmark-style holding representing the S&P 500 Index**, giving you a familiar market reference point.
+
+        ➕ **Need more holdings?** Click the button below to add additional rows and build a more diversified portfolio.
+
+        🔍 **Can't remember a ticker?** Look it up on **Yahoo Finance**, **Google Finance**, your brokerage platform, or the **Nasdaq** website.
+
+        🚀 That's it! Once your portfolio is entered, the dashboard will generate analytics, diversification metrics, charts, and insights automatically.
+        """
+    )
+
+cols = st.columns([1.5, 1.5, 1.5, 1.5, 3])
 
 custom_portfolios = {}
+
 for i in range(num_custom_portfolios):
     with cols[i]:
         title = f"Custom {i + 1}"
         default = DEFAULT_CUSTOMS[i] if i < len(DEFAULT_CUSTOMS) else {}
-        # use portfolio_editor defaults (compact view of 4 rows, expand to 8)
+
         custom_portfolios[f"custom_{i}"] = portfolio_editor(
             title,
             default,
@@ -558,6 +575,23 @@ benchmark_portfolio = DEFAULT_BENCHMARK
 st.markdown("---")
 st.header("📈 Portfolio Performance Comparison")
 
+with st.expander("📈 How to explore your portfolio charts", expanded=False):
+    st.markdown(
+        """
+        🗓️ **Choose a time period** using the **left sidebar** to view your portfolio over popular investment horizons.
+
+        📊 **Change the Y-axis** to display performance as **Growth**, **Percent Return**, or **Portfolio Value**, depending on how you'd like to analyze your results.
+
+        ⚖️ **Compare against benchmarks** by selecting one or more benchmark portfolios to see how your portfolio has performed relative to them.
+
+        🔴 **Made changes?** After updating your selections, click the **red "Update Chart"** button to refresh the charts and apply your new settings.
+
+        🔍 **Hover over the charts** to see detailed values for any date and compare performance across all selected portfolios.
+
+        💡 Experiment with different time horizons, chart views, and benchmarks to gain new insights into your portfolio!
+        """
+    )
+
 if "benchmark_returns" not in st.session_state:
     st.session_state.benchmark_returns = None
 
@@ -565,8 +599,17 @@ if "custom_returns" not in st.session_state:
     # store as dict keyed by custom portfolio id (custom_0, custom_1, ...)
     st.session_state.custom_returns = {}
 
-update_left, _ = st.columns([3,1])
-run_update = update_left.button("🔄 Update chart to display new ticker changes", type="primary", key="update_chart_main")
+st.info("📌 After changing tickers, weights, benchmarks, or chart settings, click **Update Portfolio Charts** below.")
+
+left, center, right = st.columns([1, 2, 1])
+
+with center:
+    run_update = st.button(
+        "🚀 Update Portfolio Charts ⭐",
+        type="primary",
+        use_container_width=True,
+        key="update_chart_main",
+    )
 
 # Run an initial update on first page load so default-enabled benchmarks are plotted
 if "initialized" not in st.session_state:
@@ -1089,8 +1132,7 @@ else:
                     },
                     "legend": {
                         "data": ["100/0", "70/30", "50/50"],
-                        "top": "bottom",
-                        "textStyle": {"color": "#F5F5F5", "fontSize": 12}
+                        "top": "bottom"
                     },
                     "tooltip": {"trigger": "item"},
                     "radar": {
@@ -1104,10 +1146,7 @@ else:
                             {"name": "Emerging Markets", "max": 50},
                             {"name": "Canada Equities", "max": 50},
                             {"name": "Canadian Bonds", "max": 50},
-                        ],
-                        "name": {
-                            "textStyle": {"color": "#F5F5F5", "fontSize": 12}
-                        }
+                        ]
                     },
                     "series": [
                         {
@@ -1144,7 +1183,7 @@ else:
                         }
                     ],
                 }
-                st_echarts(radar_option, height="500px")
+                st_echarts(radar_option, height="500px", theme=echarts_theme)
         except Exception:
             # fallback to plotly if echarts fails
             fig1 = px.pie(names=list(pie1.keys()), values=list(pie1.values()), title=pie1_title)
@@ -1303,8 +1342,7 @@ try:
         "bottom": "2%",
         "left": "center",
         "textStyle": {
-            "fontSize": 14,
-            "color": "#F5F5F5"
+            "fontSize": 14
         }
     },
 
@@ -1317,8 +1355,7 @@ try:
     
     "tooltip": {
         "textStyle": {
-            "fontSize": 14,
-            "color": "#F5F5F5"
+            "fontSize": 14
         }
     },
 
@@ -1326,8 +1363,7 @@ try:
         "type": "category",
         "data": ["Value", "Blend", "Growth"],
         "axisLabel": {
-            "fontSize": 14,
-            "color": "#F5F5F5"
+            "fontSize": 14
         }
     },
 
@@ -1336,8 +1372,7 @@ try:
         "data": ["Large", "Mid", "Small"],
         "inverse": True,
         "axisLabel": {
-            "fontSize": 14,
-            "color": "#F5F5F5"
+            "fontSize": 14
         }
     },
 
@@ -1350,17 +1385,13 @@ try:
             {"min": 50, "label": ">50%"},
         ],
         "orient": "horizontal",
-        "bottom": 0,
-        "textStyle": {
-            "color": "#F5F5F5"
-        }
+        "bottom": 0
     },
 
     "series": [{
         "type": "heatmap",
         "data": heatmap_data,
         "itemStyle": {
-            "borderColor": "#FFFFFF",
             "borderWidth": 2
         },
 
@@ -1378,11 +1409,11 @@ try:
     with col1:
         st_echarts(
             options=style_box_opts,
-            height="400px"
+            height="400px",
+            theme=echarts_theme
         )
 
     with col2:
-        st.markdown("### Style Box Guide")
 
         st.markdown("""
         #### Size (Market Cap)
