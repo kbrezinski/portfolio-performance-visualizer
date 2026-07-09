@@ -9,26 +9,6 @@ st.set_page_config(
     page_icon=":chart_with_upwards_trend:",
     layout="wide",
 )
-st.markdown(
-    """
-    <style>
-    .main .block-container{max-width:95%; padding-left:1rem; padding-right:1rem; font-size:16px;}
-    html, body, [class*="css"] { font-size:16px; }
-    h1, h2, h3 { font-size:1.2rem; }
-    /* Increase plotly and Streamlit metric fonts for readability */
-    .plotly-graph-div { font-size: 14px; }
-    [data-testid="metric-container"] { font-size: 14px; }
-    /* Make metric values more prominent when possible */
-    [data-testid="metric-container"] .stMetricValue, [data-testid="metric-container"] .metric-value { font-size:18px; font-weight:600; }
-    /* Larger buttons for visibility */
-    .stButton>button { font-size:18px; padding:14px 24px; width:100%; }
-    .stButton>button:hover { transform: translateY(-1px); }
-    /* Make headers stand out */
-    .main h1, .main h2 { color: #0f172a; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
 import plotly.graph_objects as go
 import plotly.express as px
@@ -49,10 +29,17 @@ except ImportError:  # pragma: no cover - optional dependency fallback
     button = None
 
 # Set SSL env vars so network libraries use certifi bundle
-cert_path = certifi.where()
-os.environ["SSL_CERT_FILE"] = cert_path
-os.environ["REQUESTS_CA_BUNDLE"] = cert_path
-os.environ["CURL_CA_BUNDLE"] = cert_path.replace('\\', '/') if isinstance(cert_path, str) else cert_path
+#cert_path = certifi.where()
+#os.environ["SSL_CERT_FILE"] = cert_path
+#os.environ["REQUESTS_CA_BUNDLE"] = cert_path
+#os.environ["CURL_CA_BUNDLE"] = cert_path.replace('\\', '/') if isinstance(cert_path, str) else cert_path
+
+def get_chart_theme_colors():
+    """Return the active Streamlit text color and a neutral grid color."""
+    text_color = st.get_option("theme.textColor") or "#111827"
+    grid_color = "rgba(255,255,255,0.18)" if text_color and "#" in text_color and text_color.lower() in {"#0f172a", "#111827", "#1f2937", "#111111", "#000000"} else "rgba(15,23,42,0.16)"
+    return text_color, grid_color
+
 
 @st.cache_data(ttl=3600)
 def fetch_prices_direct(symbols, start_date, end_date, interval='1wk'):
@@ -199,6 +186,15 @@ FOURTH_BENCHMARK = {
     "META": 14.0,
     "NVDA": 16.0,
 }
+
+# Benchmark configuration: (display_label, session_state_key, portfolio_dict)
+BENCHMARK_CONFIG = [
+    ("Ken's Benchmark", "benchmark_returns_v1", DEFAULT_BENCHMARK),
+    ("70/30 Benchmark", "benchmark_returns_v2", SECOND_BENCHMARK),
+    ("50/50 Benchmark", "benchmark_returns_v3", THIRD_BENCHMARK),
+    ("Tech Stocks",     "benchmark_returns_v4", FOURTH_BENCHMARK),
+]
+DEFAULT_BENCHMARK_SELECTION = ["Ken's Benchmark", "70/30 Benchmark", "50/50 Benchmark"]
 
 # Display-only benchmark breakdowns (category labels + concentrations).
 # These are used for the pie charts and do NOT replace the ticker->weight
@@ -367,11 +363,6 @@ except Exception:
     _horizon_days["YTD"] = 0
 
 # Sidebar modeled after example.py (query-params enabled)
-available_symbols = sorted(set(DEFAULT_BENCHMARK.keys()) | 
-                           set(SECOND_BENCHMARK.keys()) |
-                           set(THIRD_BENCHMARK.keys()) |
-                           set(FOURTH_BENCHMARK.keys()) |
-                           {k for d in DEFAULT_CUSTOMS for k in d.keys()})
 with st.sidebar:
     avatar_image = "avatar.jpeg"
     if avatar is not None:
@@ -398,42 +389,44 @@ with st.sidebar:
     initial_investment = st.number_input("Initial investment ($)", min_value=1, value=1000, step=100)
     benchmarks_sel = st.multiselect(
         "Benchmarks",
-        options=["Ken's Benchmark", "70/30 Benchmark", "50/50 Benchmark", "Tech Stocks"],
-        default=["Ken's Benchmark", "70/30 Benchmark", "50/50 Benchmark"],
+        options=[label for label, _, _ in BENCHMARK_CONFIG],
+        default=DEFAULT_BENCHMARK_SELECTION,
         key="benchmarks",
         bind="query-params",
     )
-    include_benchmark_ken = "Ken's Benchmark" in benchmarks_sel
-    include_benchmark_v2 = "70/30 Benchmark" in benchmarks_sel
-    include_benchmark_v3 = "50/50 Benchmark" in benchmarks_sel
-    include_benchmark_v4 = "Tech Stocks" in benchmarks_sel
-    # Use Streamlit default theme for charts (keep UI stable)
+    selected_benchmarks = set(benchmarks_sel)
     echarts_theme = "streamlit"
 
     # expose a small help block
     st.markdown("---")
     st.write("💡 Tip: use the filters above; selections are saved in the URL.")
 
-    def render_hours_gauge():
+    # ---------- Reusable Gauge ----------
+    def render_progress_gauge(title, current, target, unit, color, key):
 
-        hours = 12
-        target = 5_250
-        pct = (hours / target) * 100
+        pct = (current / target) * 100
+
+        # Detect Streamlit theme
+        bg = st.get_option("theme.backgroundColor")
+        text_color = st.get_option("theme.textColor")
 
         option = {
             "title": {
-                "text": "Hours Logged for \nCFP Designation",
+                "text": title,
                 "left": "center",
-                "top": "10%",
+                "top": "2%",
                 "textStyle": {
-                    "color": "#FFFFFF",
-                    "fontSize": 24
-                }
+                    "color": text_color,
+                    "fontSize": 16,
+                    "fontWeight": "bold",
+                },
             },
 
             "series": [
                 {
                     "type": "gauge",
+
+                    "center": ["50%", "60%"],
 
                     "min": 0,
                     "max": 100,
@@ -442,38 +435,22 @@ with st.sidebar:
                     "endAngle": -270,
 
                     "pointer": {"show": False},
-
-                    "progress": {
-                        "show": True,
-                        "roundCap": True,
-                        "width": 18
-                    },
-
-                    "axisLine": {
-                        "lineStyle": {
-                            "width": 18,
-                            "color": [[1, "#FFFFFF",]]
-                        }
-                    },
-
+                    "progress": {"show": True, "roundCap": True, "width": 12, "itemStyle": {"color": color}},
+                    "axisLine": {"lineStyle": {"width": 12, "color": [[1, "#E5E7EB"]]}},
                     "axisTick": {"show": False},
                     "splitLine": {"show": False},
                     "axisLabel": {"show": False},
-
+                    "title": {"show": False},
                     "detail": {
                         "valueAnimation": True,
                         "formatter": "{value}%",
-                        "color": "#FFFFFF",
-                        "fontSize": 40,
-                        "offsetCenter": [0, "10%"]
+                        "offsetCenter": [0, "0%"],
+                        "fontSize": 30,
+                        "fontWeight": "bold",
+                        "color": text_color,
                     },
 
-                    "data": [
-                        {
-                        "value": round(pct, 2),
-                            
-                        }
-                    ],
+                    "data": [{"value": round(pct, 2)}],
                 }
             ],
 
@@ -481,33 +458,59 @@ with st.sidebar:
                 {
                     "type": "text",
                     "left": "center",
-                    "top": "60%",
+                    "top": "70%",
                     "style": {
-                        "text": f"{hours} / {target} hrs",
-                        "fill": "#BBBBBB",
-                        "fontSize": 12
-                    }
+                        "text": f"{current:,} / {target:,} {unit}",
+                        "fill": color,
+                        "fontSize": 12,
+                        "fontWeight": 500,
+                    },
                 }
-            ]
+            ],
         }
 
-        st_echarts(options=option, height="450px", key="hours_gauge")
+        st_echarts(
+            options=option,
+            height="190px",
+            key=f"gauge_{key}",
+        )
 
 
-    render_hours_gauge()
+    # ---------- Progress Section ----------
+    with st.expander("📈 Professional Progress towards CFP Designation", expanded=False):
 
-    # (Removed page-wide theme injection to keep Streamlit default styling)
+        render_progress_gauge(
+            title="📚 CFP Hours",
+            current=12,
+            target=5250,
+            unit="hrs",
+            color="#2563EB",      # Blue
+            key="hours",
+        )
+        render_progress_gauge(
+            title="👥 Clients",
+            current=7,
+            target=30,
+            unit="clients",
+            color="#10B981",      # Emerald
+            key="clients",
+        )
+        render_progress_gauge(
+            title="🤝 Meetings",
+            current=10,
+            target=100,
+            unit="meetings",
+            color="#F97316",      # Orange
+            key="meetings",
+        )
 
-# map the selected reporting period to the horizon variable used elsewhere
-horizon = reporting
+    slice_start_date = datetime.today() - timedelta(days=_horizon_days.get(reporting, 180))
+    # Always fetch 5 years of weekly data to allow slicing locally
+    fetch_end_date = datetime.today()
+    fetch_start_date = fetch_end_date - timedelta(days=365 * 10)
+    fetch_interval = '1wk'
 
-slice_start_date = datetime.today() - timedelta(days=_horizon_days.get(horizon, 180))
-# Always fetch 5 years of weekly data to allow slicing locally
-fetch_end_date = datetime.today()
-fetch_start_date = fetch_end_date - timedelta(days=365 * 10)
-fetch_interval = '1wk'
-
-# Global toggle removed from sidebar. Controls are defined in the custom sidebar below.
+    # Global toggle removed from sidebar. Controls are defined in the custom sidebar below.
 
 
 # -----------------------------
@@ -547,26 +550,10 @@ for i in range(num_custom_portfolios):
             f"custom_{i}"
         )
 
-# Add a main-page button to expand portfolio editors to 8 rows (one-click)
-col_expand_left, _ = st.columns([3,1])
-if col_expand_left.button("🧩 Show all rows for portfolios (expand to 8)", key="expand_portfolios_main"):
-    st.session_state["show_all_portfolios"] = True
-    # Attempt a safe rerun that works across Streamlit versions.
-    try:
-        # Preferred method when available
-        st.experimental_rerun()
-    except Exception:
-        # Fallback: changing query params triggers a rerun in many Streamlit versions
-        try:
-            st.experimental_set_query_params(_show_all="1")
-            # stop execution so the rerun can occur cleanly
-        except Exception:
-            # Last resort: notify the user to refresh the page
-            st.warning("Click Again for the Expanded Rows to Appear.")
-
-
-# Benchmark is fixed (not shown in editor)
-benchmark_portfolio = DEFAULT_BENCHMARK
+if not st.session_state.get("show_all_portfolios", False):
+    if st.button("🧩 Show all rows for portfolios (expand to 8)", key="expand_portfolios_main", use_container_width=True, type="secondary"):
+        st.session_state["show_all_portfolios"] = True
+        st.rerun()
 
 
 # -----------------------------
@@ -621,32 +608,10 @@ if not st.session_state.initialized:
 
 if do_update:
     with st.spinner("Loading market data (direct fetch, 1 month)..."):
-        # Collect symbols from custom editors and optionally enabled benchmarks
-        all_symbols = set()
-        # custom portfolios
-        for p in list(custom_portfolios.values()):
-            for s, w in p.items():
-                if s and w > 0:
-                    all_symbols.add(s)
-        # include Ken's benchmark only if requested
-        if include_benchmark_ken:
-            for s, w in DEFAULT_BENCHMARK.items():
-                if s and w > 0:
-                    all_symbols.add(s)
-        # include optional benchmark
-        if include_benchmark_v2:
-            for s, w in SECOND_BENCHMARK.items():
-                if s and w > 0:
-                    all_symbols.add(s)
-                            # include optional benchmark
-        if include_benchmark_v3:
-            for s, w in THIRD_BENCHMARK.items():
-                if s and w > 0:
-                    all_symbols.add(s)
-        if include_benchmark_v4:
-            for s, w in FOURTH_BENCHMARK.items():
-                if s and w > 0:
-                    all_symbols.add(s)
+        all_symbols = set(s for p in custom_portfolios.values() for s, w in p.items() if s and w > 0)
+        for label, _, portfolio in BENCHMARK_CONFIG:
+            if label in selected_benchmarks:
+                all_symbols.update(s for s, w in portfolio.items() if s and w > 0)
 
         prices = None
         if all_symbols:
@@ -665,50 +630,11 @@ if do_update:
                 st.session_state["last_prices_key"] = fetch_key
                 st.session_state["cached_prices"] = prices
 
-        # Calculate requested benchmark(s) and custom portfolios using the direct prices
-        # Ken's benchmark (optional)
-        if include_benchmark_ken:
-            st.session_state.benchmark_returns_ken = calculate_portfolio_returns(
-                DEFAULT_BENCHMARK,
-                fetch_start_date,
-                fetch_end_date,
-                prices_override=prices
+        for label, state_key, portfolio in BENCHMARK_CONFIG:
+            st.session_state[state_key] = (
+                calculate_portfolio_returns(portfolio, fetch_start_date, fetch_end_date, prices_override=prices)
+                if label in selected_benchmarks else None
             )
-        else:
-            st.session_state.benchmark_returns_ken = None
-        
-        # Optional benchmark (THIRD)
-        if include_benchmark_v2:
-            st.session_state.benchmark_returns_v2 = calculate_portfolio_returns(
-                SECOND_BENCHMARK,
-                fetch_start_date,
-                fetch_end_date,
-                prices_override=prices
-            )
-        else:
-            st.session_state.benchmark_returns_v2 = None
-
-        # Optional benchmark (THIRD)
-        if include_benchmark_v3:
-            st.session_state.benchmark_returns_v3 = calculate_portfolio_returns(
-                THIRD_BENCHMARK,
-                fetch_start_date,
-                fetch_end_date,
-                prices_override=prices
-            )
-        else:
-            st.session_state.benchmark_returns_v3 = None
-
-        # Optional benchmark (Tech Stocks)
-        if include_benchmark_v4:
-            st.session_state.benchmark_returns_v4 = calculate_portfolio_returns(
-                FOURTH_BENCHMARK,
-                fetch_start_date,
-                fetch_end_date,
-                prices_override=prices
-            )
-        else:
-            st.session_state.benchmark_returns_v4 = None
 
         for pid, portfolio in custom_portfolios.items():
             st.session_state.custom_returns[pid] = calculate_portfolio_returns(
@@ -718,7 +644,6 @@ if do_update:
                 prices_override=prices
             )
 
-benchmark_returns = st.session_state.benchmark_returns
 custom_returns = st.session_state.custom_returns
 
 # Ensure `custom_returns` is a dict. Older runs may have stored a single Series/DataFrame
@@ -754,22 +679,11 @@ def prepare_series(series):
 
 fig = go.Figure()
 
-# build list of (label, series, id) for plotting so we can assign colors consistently
 plot_items = []
-# Descriptive labels for the benchmarks
-bench_ken_label = "Ken's Benchmark"
-bench_v2_label = "70/30 Benchmark"
-bench_v3_label = "50/50 Benchmark"
-bench_v4_label = "Tech Stocks"
-# Append benchmarks only if enabled
-if st.session_state.get("benchmark_returns_ken") is not None:
-    plot_items.append((bench_ken_label, st.session_state.get("benchmark_returns_ken"), 'benchmark_ken'))
-if st.session_state.get("benchmark_returns_v2") is not None:
-    plot_items.append((bench_v2_label, st.session_state.get("benchmark_returns_v2"), 'benchmark_v2'))
-if st.session_state.get("benchmark_returns_v3") is not None:
-    plot_items.append((bench_v3_label, st.session_state.get("benchmark_returns_v3"), 'benchmark_v3'))
-if st.session_state.get("benchmark_returns_v4") is not None:
-    plot_items.append((bench_v4_label, st.session_state.get("benchmark_returns_v4"), 'benchmark_v4'))
+for label, state_key, _ in BENCHMARK_CONFIG:
+    series = st.session_state.get(state_key)
+    if series is not None:
+        plot_items.append((label, series, state_key))
 
 for pid, series in custom_returns.items():
     p = custom_portfolios.get(pid)
@@ -874,65 +788,6 @@ else:
     st.markdown("<hr style='margin-top:18px;margin-bottom:8px'>", unsafe_allow_html=True)
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
-    # Prepare metric values into a list so we can render them as a table
-    metrics_data = []
-    for item in plotted:
-        name, color, series_obj, total_pct, annualized, raw_series = item
-
-        # Final value
-        final_display = "N/A"
-        try:
-            if series_obj is not None and not series_obj.empty:
-                last = float(series_obj.iloc[-1])
-                if y_axis_mode == "Value ($)":
-                    final_display = f"${last:,.2f}"
-                elif y_axis_mode == "Growth of $1":
-                    final_display = f"{last:.2f}x"
-                else:
-                    final_display = f"{last:.2f}%"
-        except Exception:
-            final_display = "N/A"
-
-        delta_text = f"{total_pct:.2f}%" if total_pct is not None else None
-
-        # Variance (display with 2 decimal places)
-        var_text = "N/A"
-        try:
-            if raw_series is not None and not raw_series.empty:
-                rets = raw_series.pct_change().dropna()
-                if not rets.empty:
-                    var_percent = (rets * 100).var()
-                    var_text = f"{var_percent:.2f}%"
-        except Exception:
-            var_text = "N/A"
-
-        # Best and worst calendar years
-        worst_text = "N/A"
-        best_text = "N/A"
-        try:
-            if raw_series is not None and not raw_series.empty:
-                yearly = raw_series.groupby(raw_series.index.year).apply(lambda s: float(s.iloc[-1]) / float(s.iloc[0]) - 1.0)
-                if not yearly.empty:
-                    worst_year = yearly.idxmin()
-                    worst_val = yearly.min() * 100.0
-                    worst_text = f"{worst_year}: {worst_val:.2f}%"
-                    best_year = yearly.idxmax()
-                    best_val = yearly.max() * 100.0
-                    best_text = f"{best_year}: {best_val:.2f}%"
-        except Exception:
-            worst_text = "N/A"
-            best_text = "N/A"
-
-        metrics_data.append({
-            "name": name,
-            "color": color,
-            "final": final_display,
-            "delta": delta_text,
-            "variance": var_text,
-            "best": best_text,
-            "worst": worst_text,
-        })
-
     # Render per-plot metrics using Streamlit `metric` components in columns
     try:
         stats_cols = st.columns(len(plotted))
@@ -1014,8 +869,7 @@ else:
         # the category labels and concentrations (these do not affect
         # portfolio return calculations which still use the ticker maps).
         pie1 = DEFAULT_BENCHMARK_DISPLAY.copy()
-
-        c1 = st.columns(1)[0]
+        pie1_title = "Asset Allocation"
 
         pie1_opts = {
             "title": {"text": "Asset Allocation", "left": "center"},
@@ -1125,27 +979,54 @@ else:
                 }
                 st_echarts(options=options, height="500px")
             with row2_right:
+                label_color, grid_color = get_chart_theme_colors()
+                theme_is_dark = (
+                    "dark" in (st.get_option("theme.base") or "").lower()
+                    or "#000" in (st.get_option("theme.backgroundColor") or "").lower()
+                    or "#0" in (st.get_option("theme.backgroundColor") or "").lower()
+                )
+                radar_text_color = "#f8fafc" if label_color and "#" in label_color and label_color.lower() in {"#0f172a", "#111827", "#1f2937", "#111111", "#000000"} else (label_color or "#111827")
+                radar_panel_bg = "rgba(15,23,42,0.95)" if theme_is_dark else "rgba(255,255,255,0.98)"
+                radar_panel_text_color = "#f8fafc" if theme_is_dark else "#111827"
+                radar_split_area_colors = ["rgba(255,255,255,0.08)", "rgba(255,255,255,0.14)"] if theme_is_dark else ["rgba(15,23,42,0.04)", "rgba(15,23,42,0.08)"]
                 radar_option = {
+                    "backgroundColor": "transparent",
                     "title": {
                         "text": "Portfolio Allocation Comparison",
-                        "left": "center"
+                        "left": "center",
+                        "textStyle": {"color": radar_text_color}
                     },
                     "legend": {
                         "data": ["100/0", "70/30", "50/50"],
-                        "top": "bottom"
+                        "top": "bottom",
+                        "textStyle": {"color": radar_text_color}
                     },
-                    "tooltip": {"trigger": "item"},
+                    "tooltip": {
+                        "trigger": "item",
+                        "confine": True,
+                        "appendToBody": True,
+                        "backgroundColor": radar_panel_bg,
+                        "borderColor": radar_panel_bg,
+                        "borderWidth": 1,
+                        "textStyle": {"color": radar_panel_text_color},
+                        "extraCssText": f"box-shadow: 0 0 10px rgba(0,0,0,0.25); color: {radar_panel_text_color};"
+                    },
                     "radar": {
                         "center": ["50%", "50%"],
                         "radius": "70%",
+                        "axisName": {"textStyle": {"color": radar_text_color, "fontSize": 13}},
+                        "axisLine": {"lineStyle": {"color": radar_text_color, "width": 1}},
+                        "splitLine": {"lineStyle": {"color": grid_color, "width": 1}},
+                        "axisLabel": {"show": True, "textStyle": {"color": radar_text_color, "fontSize": 12}},
+                        "splitArea": {"areaStyle": {"color": radar_split_area_colors}},
                         "indicator": [
-                            {"name": "US Equities", "max": 50},
-                            {"name": "US Small Cap Value", "max": 50},
-                            {"name": "International Small Cap Value", "max": 50},
-                            {"name": "International Developed", "max": 50},
-                            {"name": "Emerging Markets", "max": 50},
-                            {"name": "Canada Equities", "max": 50},
-                            {"name": "Canadian Bonds", "max": 50},
+                            {"name": "US Equities", "max": 50, "textStyle": {"color": radar_text_color}},
+                            {"name": "US Small Cap Value", "max": 50, "textStyle": {"color": radar_text_color}},
+                            {"name": "International Small Cap Value", "max": 50, "textStyle": {"color": radar_text_color}},
+                            {"name": "International Developed", "max": 50, "textStyle": {"color": radar_text_color}},
+                            {"name": "Emerging Markets", "max": 50, "textStyle": {"color": radar_text_color}},
+                            {"name": "Canada Equities", "max": 50, "textStyle": {"color": radar_text_color}},
+                            {"name": "Canadian Bonds", "max": 50, "textStyle": {"color": radar_text_color}},
                         ]
                     },
                     "series": [
@@ -1183,7 +1064,7 @@ else:
                         }
                     ],
                 }
-                st_echarts(radar_option, height="500px", theme=echarts_theme)
+                st_echarts(radar_option, height="500px", theme=None)
         except Exception:
             # fallback to plotly if echarts fails
             fig1 = px.pie(names=list(pie1.keys()), values=list(pie1.values()), title=pie1_title)
@@ -1202,218 +1083,210 @@ else:
         pass
 
 # -----------------------------
-# Bottom: Top Countries by Rank scatter chart
+# Bottom: Top Countries by Rank table
 # -----------------------------
 try:
     st.markdown("---")
     st.header("🌍 Top Countries by Rank")
 
-    # Build DataFrame for the chart
     years = [2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019]
-
     blocks = [
         # 2026
         [("South Korea",111.72),("Taiwan",61.78),("Norway",26.7),("Israel",25.14),
          ("Thailand",23.11),("Peru",18.55),("Netherlands",17.55),("Austria",16.13),
          ("Japan",15.14),("Poland",15.12)],
-
         # 2025
         [("South Korea",95.33),("Peru",86.88),("Spain",78.03),("Poland",77.34),
          ("Greece",76.11),("South Africa",75.2),("Austria",74.2),("Colombia",68.88),
          ("Vietnam",66.55),("Chile",65.41)],
-
         # 2024
         [("Argentina",63.46),("Israel",34.5),("China",28.98),("United States",23.81),
          ("Singapore",22.1),("Peru",21.72),("Malaysia",19.46),("United Arab Emirates",15.26),
          ("Turkey",12.91),("Taiwan",12.45)],
-
         # 2023
         [("Argentina",53.65),("Poland",50.7),("Greece",42.69),("Mexico",40.32),
          ("Ireland",35.12),("Brazil",32.6),("Italy",30.64),("Spain",30.26),
          ("Taiwan",29),("United States",26.05)],
-
         # 2022
         [("Turkey",105.81),("Chile",25.17),("Brazil",12.35),("Argentina",10.36),
          ("Peru",2.13),("Mexico",1.26),("Thailand",1.22),("Greece",0.98),
          ("Indonesia",-0.15),("United Kingdom",-4.38)],
-
         # 2021
         [("United Arab Emirates",44.1),("Saudi Arabia",33.56),("Austria",31.54),
          ("Taiwan",28.94),("Canada",27),("United States",25.67),("Sweden",22.86),
          ("Israel",22.84),("Netherlands",22.74),("Vietnam",22.05)],
-
         # 2020
         [("Denmark",42.55),("South Korea",39.44),("Taiwan",31.5),("Netherlands",23.22),
          ("Sweden",22.26),("United States",21.03),("New Zealand",20.04),
          ("Japan",15.41),("India",14.83),("Argentina",14.57)],
-
         # 2019
         [("Greece",50.2),("Taiwan",33.33),("Netherlands",32.46),("Switzerland",31.58),
          ("United States",30.67),("Colombia",30.4),("New Zealand",30.1),
-         ("Ireland",28.14),("Brazil",27.65),("Canada",27.56)]
+         ("Ireland",28.14),("Brazil",27.65),("Canada",27.56)],
     ]
 
-    data = []
-    for year, block in zip(years, blocks):
-        for rank, (country, value) in enumerate(block, start=1):
-            data.append([year, rank, country, value])
+    import colorsys as _cs
+    all_countries_sorted = sorted({c for block in blocks for c, _ in block})
+    n = len(all_countries_sorted)
+    country_colors = {
+        c: "#{:02x}{:02x}{:02x}".format(
+            int(r * 255), int(g * 255), int(b * 255)
+        )
+        for i, c in enumerate(all_countries_sorted)
+        for r, g, b in [_cs.hsv_to_rgb(i / n, 0.58, 0.86)]
+    }
 
-    df_countries = pd.DataFrame(data, columns=["Year", "Rank", "Country", "Percent"])
+    def _fg(hex_bg):
+        h = hex_bg.lstrip("#")
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        return "#ffffff" if (0.299 * r + 0.587 * g + 0.114 * b) < 140 else "#111827"
 
-    # create a label that includes country name and percent for in-marker text
-    df_countries["Label"] = df_countries.apply(lambda r: f"{r['Country']}\n{r['Percent']:.2f}%", axis=1)
+    lookup = {
+        year: {rank: (c, v) for rank, (c, v) in enumerate(block, start=1)}
+        for year, block in zip(years, blocks)
+    }
 
-    # create a distinct color for each country to avoid reusing similar colors
-    unique_countries = sorted(df_countries["Country"].unique())
-    try:
-        base = px.colors.qualitative.Plotly
-        n = len(unique_countries)
-        if n <= len(base):
-            palette = base[:n]
-        else:
-            import colorsys
-            palette = []
-            for i in range(n):
-                h = i / max(1, n)
-                r, g, b = colorsys.hsv_to_rgb(h, 0.65, 0.9)
-                palette.append('#%02x%02x%02x' % (int(r * 255), int(g * 255), int(b * 255)))
-        color_map = {c: palette[i] for i, c in enumerate(unique_countries)}
-    except Exception:
-        color_map = None
+    # Use Streamlit theme variables
+    border = "1px solid var(--border-color)"
+    header_text = "var(--text-color)"
+    header_bg = "var(--secondary-background-color)"
 
-    fig_countries = px.scatter(
-        df_countries,
-        x="Year",
-        y="Rank",
-        color="Country",
-        color_discrete_map=color_map,
-        hover_data=["Percent"],
-        text="Label",
+    th_style = (
+        f"padding:2px 2px;"
+        f"color:{header_text};"
+        f"background:{header_bg};"
+        f"text-align:center;"
+        f"border:{border};"
+        f"font-size:13px;"
+        f"width:60px;"
+        f"min-width:60px;"
     )
 
-    # enlarge markers, add thin border, and use white text for contrast
-    fig_countries.update_traces(
-        marker=dict(size=42, symbol="square", line=dict(width=1, color='rgba(0,0,0,0.2)'), opacity=0.95),
-        textposition="middle center",
-        textfont=dict(color="white", size=11, family="Arial"),
-        selector=dict(mode='markers+text')
-    )
-    # show rank with 1 at top and reverse the year axis so newest -> oldest left-to-right
-    fig_countries.update_xaxes(autorange='reversed')
-    fig_countries.update_yaxes(autorange="reversed", dtick=1)
-    fig_countries.update_layout(
-        title="Top Countries by Rank (Color = Country)",
-        xaxis_title="Year",
-        yaxis_title="Rank (1 = highest)",
-        template="plotly_white",
-        height=600,
+    rank_th_style = (
+        f"padding:4px 4px;"
+        f"color:{header_text};"
+        f"background:{header_bg};"
+        f"text-align:center;"
+        f"border:{border};"
+        f"font-size:13px;"
+        f"width:40px;"
+        f"min-width:40px;"
     )
 
-    st.plotly_chart(fig_countries, use_container_width=True)
+    header_html = f"<tr><th style='{rank_th_style}'>Rank</th>"
+    for year in years:
+        header_html += f"<th style='{th_style}'>{year}</th>"
+    header_html += "</tr>"
+
+    rows_html = ""
+    for rank in range(1, 11):
+        row = f"<td style='padding:8px 6px;font-weight:bold;text-align:center;color:{header_text};background:{header_bg};border:{border};width:44px;min-width:44px;'>{rank}</td>"
+        for year in years:
+            entry = lookup.get(year, {}).get(rank)
+            if entry:
+                country, pct = entry
+                bg = country_colors[country]
+                fg = _fg(bg)
+                row += (
+                    f"<td style='padding:8px 6px;background:{bg};color:{fg};text-align:center;"
+                    f"border:1px solid rgba(0,0,0,0.1);width:60px;min-width:60px;line-height:1.5;'>"
+                    f"<span style='font-size:14px;font-weight:bold;display:block;'>{country}</span>"
+                    f"<span style='font-size:11px;'>{pct:.2f}%</span></td>"
+                )
+            else:
+                row += f"<td style='border:{border};width:90px;min-width:90px;'></td>"
+        rows_html += f"<tr>{row}</tr>"
+
+    st.markdown(
+        "<div style='overflow-x:auto;margin-top:8px;'>"
+        "<table style='border-collapse:collapse;width:80%;font-family:Arial,sans-serif;'>"
+        f"<thead>{header_html}</thead><tbody>{rows_html}</tbody>"
+        "</table></div>",
+        unsafe_allow_html=True,
+    )
 except Exception:
-    st.warning("Failed to render Top Countries by Rank chart.")
+    st.warning("Failed to render Top Countries by Rank table.")
+
 
 try:
     st.markdown("---")
     st.header("⭐ Example Morning Star Equity Mix")
 
-    heatmap_data = [
-        [0, 0, 35],
-        [1, 0, 10],
-        [2, 0, 5],
-
-        [0, 1, 15],
-        [1, 1, 20],
-        [2, 1, 0],
-
-        [0, 2, 5],
-        [1, 2, 10],
-        [2, 2, 0],
-    ]
-
-    x_labels = ["Value", "Blend", "Growth"]
-    y_labels = ["Large", "Mid", "Small"]
+    _base = (st.get_option("theme.base") or "light").lower()
+    _is_dark = "dark" in _base
+    hm_text = "#f1f5f9" if _is_dark else "#111827"
+    hm_grid = "rgba(255,255,255,0.18)" if _is_dark else "rgba(15,23,42,0.16)"
+    hm_echarts_theme = "dark" if _is_dark else None
 
     style_box_opts = {
-
-    "legend": {
-        "data": ["Style Box"],
-        "orient": "horizontal",
-        "bottom": "2%",
-        "left": "center",
+        "backgroundColor": "transparent",
         "textStyle": {
-            "fontSize": 14
-        }
-    },
-
-    "grid": {
-        "height": "70%",
-        "top": "10%",
-        "left": "12%",
-        "right": "6%"
-    },
-    
-    "tooltip": {
-        "textStyle": {
-            "fontSize": 14
-        }
-    },
-
-    "xAxis": {
-        "type": "category",
-        "data": ["Value", "Blend", "Growth"],
-        "axisLabel": {
-            "fontSize": 14
-        }
-    },
-
-    "yAxis": {
-        "type": "category",
-        "data": ["Large", "Mid", "Small"],
-        "inverse": True,
-        "axisLabel": {
-            "fontSize": 14
-        }
-    },
-
-    "visualMap": {
-        "type": "piecewise",
-        "pieces": [
-            {"min": 0, "max": 10, "label": "0-10%"},
-            {"min": 10, "max": 25, "label": "10-25%"},
-            {"min": 25, "max": 50, "label": "25-50%"},
-            {"min": 50, "label": ">50%"},
-        ],
-        "orient": "horizontal",
-        "bottom": 0
-    },
-
-    "series": [{
-        "type": "heatmap",
-        "data": heatmap_data,
-        "itemStyle": {
-            "borderWidth": 2
+            "color": hm_text,
+            "fontSize": 14,
         },
-
-        "label": {
-            "show": True,
-            "formatter": "{@[2]}%",
-            "fontSize": 24, 
-            "fontWeight": "bold"
+        "legend": {
+            "data": ["Style Box"],
+            "orient": "horizontal",
+            "bottom": "2%",
+            "left": "center",
+            "textStyle": {
+                "fontSize": 14,
+                "color": hm_text
+        }
+        },        
+        "grid": {"height": "70%", "top": "10%", "left": "12%", "right": "6%"},
+        "tooltip": {
+            "textStyle": {
+                "fontSize": 14,
+                "color": hm_text
+            },
+            "backgroundColor": "var(--secondary-background-color)",
         },
-    }]
+        "xAxis": {
+            "type": "category",
+            "data": ["Value", "Blend", "Growth"],
+            "axisLabel": {"fontSize": 14, "color": hm_text},
+            "axisLine": {"lineStyle": {"color": hm_text}},
+            "splitLine": {"lineStyle": {"color": hm_grid}},
+        },
+        "yAxis": {
+            "type": "category",
+            "data": ["Large", "Mid", "Small"],
+            "inverse": True,
+            "axisLabel": {"fontSize": 14, "color": hm_text},
+            "axisLine": {"lineStyle": {"color": hm_text}},
+            "splitLine": {"lineStyle": {"color": hm_grid}},
+        },
+        "visualMap": {
+            "type": "piecewise",
+            "pieces": [
+                {"min": 0, "max": 10, "label": "0-10%"},
+                {"min": 10, "max": 25, "label": "10-25%"},
+                {"min": 25, "max": 50, "label": "25-50%"},
+                {"min": 50, "label": ">50%"},
+            ],
+            "orient": "horizontal",
+            "bottom": 0,
+            "textStyle": {"color": hm_text},
+        },
+        "series": [{
+            "type": "heatmap",
+            "data": [
+                [0, 0, 35], [1, 0, 10], [2, 0, 5],
+                [0, 1, 15], [1, 1, 20], [2, 1, 0],
+                [0, 2, 5],  [1, 2, 10], [2, 2, 0],
+            ],
+            "itemStyle": {"borderWidth": 2},
+            "label": {"show": True, "formatter": "{@[2]}%", "fontSize": 24, "fontWeight": "bold", "color": hm_text},
+        }],
     }
 
     col1, col2 = st.columns([0.7, 1.3])
 
     with col1:
-        st_echarts(
-            options=style_box_opts,
-            height="400px",
-            theme=echarts_theme
-        )
+        st_echarts(options=style_box_opts, height="400px", theme=hm_echarts_theme)
 
-    with col2:
+    with col2: 
 
         st.markdown("""
         #### Size (Market Cap)
