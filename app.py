@@ -88,6 +88,33 @@ DEFAULT_CUSTOMS = [
     {},
 ]
 
+PROGRESS_GAUGES = [
+    {
+        "title": "📚 CFP Hours",
+        "current": 42,
+        "target": 5250,
+        "unit": "hrs",
+        "color": "#60A5FA",
+        "key": "hours",
+    },
+    {
+        "title": "🧑 Clients",
+        "current": 6,
+        "target": 20,
+        "unit": "clients",
+        "color": "#10B981",
+        "key": "clients",
+    },
+    {
+        "title": "🤝 Meetings",
+        "current": 12,
+        "target": 100,
+        "unit": "meetings",
+        "color": "#F97316",
+        "key": "meetings",
+    },
+]
+
 def get_chart_theme_colors():
     """Return deterministic chart colors for the forced-dark app theme."""
     return "#f1f5f9", "rgba(255,255,255,0.18)"
@@ -465,31 +492,17 @@ with st.sidebar:
 
     # ---------- Progress Section ----------
     with st.expander("📈 Professional Progress towards CFP Designation", expanded=False):
+        st.caption("As of July 10th, 2026")
 
-        render_progress_gauge(
-            title="📚 CFP Hours",
-            current=12,
-            target=5250,
-            unit="hrs",
-            color="#60A5FA",      # Lighter blue for dark background contrast
-            key="hours",
-        )
-        render_progress_gauge(
-            title="🧑 Clients",
-            current=7,
-            target=30,
-            unit="clients",
-            color="#10B981",      # Emerald
-            key="clients",
-        )
-        render_progress_gauge(
-            title="🤝 Meetings",
-            current=10,
-            target=100,
-            unit="meetings",
-            color="#F97316",      # Orange
-            key="meetings",
-        )
+        for gauge in PROGRESS_GAUGES:
+            render_progress_gauge(
+                title=gauge["title"],
+                current=gauge["current"],
+                target=gauge["target"],
+                unit=gauge["unit"],
+                color=gauge["color"],
+                key=gauge["key"],
+            )
 
     slice_start_date = datetime.today() - timedelta(days=_horizon_days.get(reporting, 180))
     # Always fetch 5 years of weekly data to allow slicing locally
@@ -858,20 +871,9 @@ else:
         pie1 = DEFAULT_BENCHMARK_DISPLAY.copy()
         pie1_title = "Asset Allocation"
         label_color, _ = get_chart_theme_colors()
-        pie_palette = [
-            "#60a5fa",
-            "#34d399",
-            "#fbbf24",
-            "#f472b6",
-            "#a78bfa",
-            "#f87171",
-            "#22d3ee",
-            "#f59e0b",
-        ]
 
         pie1_opts = {
             "backgroundColor": "transparent",
-            "color": pie_palette,
             "title": {
                 "text": "Asset Allocation",
                 "left": "center",
