@@ -1,7 +1,3 @@
-import os
-import certifi
-from pathlib import Path
-
 import streamlit as st
 # set wide layout, page icon and small CSS to increase usable width
 st.set_page_config(
@@ -18,27 +14,83 @@ import time
 import yfinance as yf
 from streamlit_echarts import st_echarts, JsCode
 
-try:
-    from streamlit_extras.avatar import avatar
-except ImportError:  # pragma: no cover - optional dependency fallback
-    avatar = None
+# -----------------------------
+# App configuration
+# -----------------------------
+FORCE_DARK_THEME = True
 
-try:
-    from streamlit_extras.buy_me_a_coffee import button
-except ImportError:  # pragma: no cover - optional dependency fallback
-    button = None
 
-# Set SSL env vars so network libraries use certifi bundle
-#cert_path = certifi.where()
-#os.environ["SSL_CERT_FILE"] = cert_path
-#os.environ["REQUESTS_CA_BUNDLE"] = cert_path
-#os.environ["CURL_CA_BUNDLE"] = cert_path.replace('\\', '/') if isinstance(cert_path, str) else cert_path
+# -----------------------------
+# Editable benchmark/portfolio constants
+# -----------------------------
+DEFAULT_BENCHMARK = {
+    "AVDV": 8.0,
+    "AVUV": 8.0,
+    "VUN.TO": 25.0,
+    "XEC.TO": 10.0,
+    "XEF.TO": 20.0,
+    "XIC.TO": 29.0,
+    "ZAG.TO": 0.0,
+}
+
+SECOND_BENCHMARK = {
+    "AVDV": 4.2,
+    "AVUV": 7.0,
+    "VUN.TO": 21.0,
+    "XEC.TO": 5.6,
+    "XEF.TO": 11.2,
+    "XIC.TO": 21.0,
+    "ZAG.TO": 30.0,
+}
+
+THIRD_BENCHMARK = {
+    "AVDV": 3.0,
+    "AVUV": 5.0,
+    "VUN.TO": 15.0,
+    "XEC.TO": 4.0,
+    "XEF.TO": 8.0,
+    "XIC.TO": 15.0,
+    "ZAG.TO": 50.0,
+}
+
+FOURTH_BENCHMARK = {
+    "TSLA": 14.0,
+    "AAPL": 14.0,
+    "MSFT": 14.0,
+    "GOOGL": 14.0,
+    "AMZN": 14.0,
+    "META": 14.0,
+    "NVDA": 16.0,
+}
+
+BENCHMARK_CONFIG = [
+    ("Ken's Benchmark", "benchmark_returns_v1", DEFAULT_BENCHMARK),
+    ("70/30 Benchmark", "benchmark_returns_v2", SECOND_BENCHMARK),
+    ("50/50 Benchmark", "benchmark_returns_v3", THIRD_BENCHMARK),
+    ("Tech Stocks", "benchmark_returns_v4", FOURTH_BENCHMARK),
+]
+DEFAULT_BENCHMARK_SELECTION = ["Ken's Benchmark", "70/30 Benchmark", "50/50 Benchmark"]
+
+DEFAULT_BENCHMARK_DISPLAY = {
+    "US Equities": 25.0,
+    "US Small Cap Value": 8.0,
+    "International Small Cap Value": 8.0,
+    "International Developed": 20.0,
+    "Emerging Markets": 10.0,
+    "Canada Equities": 29.0,
+    "Canadian Bonds": 0.0,
+}
+
+DEFAULT_CUSTOMS = [
+    {"SPY": 100.0},
+    {},
+    {},
+    {},
+]
 
 def get_chart_theme_colors():
-    """Return the active Streamlit text color and a neutral grid color."""
-    text_color = st.get_option("theme.textColor") or "#111827"
-    grid_color = "rgba(255,255,255,0.18)" if text_color and "#" in text_color and text_color.lower() in {"#0f172a", "#111827", "#1f2937", "#111111", "#000000"} else "rgba(15,23,42,0.16)"
-    return text_color, grid_color
+    """Return deterministic chart colors for the forced-dark app theme."""
+    return "#f1f5f9", "rgba(255,255,255,0.18)"
 
 
 @st.cache_data(ttl=3600)
@@ -142,80 +194,6 @@ def fetch_prices_direct(symbols, start_date, end_date, interval='1wk'):
     prices = prices.dropna(how='all')
     return prices
 
-
-# -----------------------------
-# Default portfolios
-# -----------------------------
-
-DEFAULT_BENCHMARK = {
-    "AVDV": 8.0,
-    "AVUV": 8.0,
-    "VUN.TO": 25.0,
-    "XEC.TO": 10.0,
-    "XEF.TO": 20.0,
-    "XIC.TO": 29.0,
-    "ZAG.TO": 0.0,
-}
-# Optional second benchmark (user's VTI-style benchmark)
-SECOND_BENCHMARK = {
-    "AVDV": 4.2,
-    "AVUV": 7.0,
-    "VUN.TO": 21.0,
-    "XEC.TO": 5.6,
-    "XEF.TO": 11.2,
-    "XIC.TO": 21.0,
-    "ZAG.TO": 30.0,
-}
-# Optional third benchmark
-THIRD_BENCHMARK = {
-    "AVDV": 3.0,
-    "AVUV": 5.0,
-    "VUN.TO": 15.0,
-    "XEC.TO": 4.0,
-    "XEF.TO": 8.0,
-    "XIC.TO": 15.0,
-    "ZAG.TO": 50.0,
-}
-# Optional fourth benchmark (Tech Stocks)
-FOURTH_BENCHMARK = {
-    "TSLA": 14.0,
-    "AAPL": 14.0,
-    "MSFT": 14.0,
-    "GOOGL": 14.0,
-    "AMZN": 14.0,
-    "META": 14.0,
-    "NVDA": 16.0,
-}
-
-# Benchmark configuration: (display_label, session_state_key, portfolio_dict)
-BENCHMARK_CONFIG = [
-    ("Ken's Benchmark", "benchmark_returns_v1", DEFAULT_BENCHMARK),
-    ("70/30 Benchmark", "benchmark_returns_v2", SECOND_BENCHMARK),
-    ("50/50 Benchmark", "benchmark_returns_v3", THIRD_BENCHMARK),
-    ("Tech Stocks",     "benchmark_returns_v4", FOURTH_BENCHMARK),
-]
-DEFAULT_BENCHMARK_SELECTION = ["Ken's Benchmark", "70/30 Benchmark", "50/50 Benchmark"]
-
-# Display-only benchmark breakdowns (category labels + concentrations).
-# These are used for the pie charts and do NOT replace the ticker->weight
-# benchmark constants above which are used for price fetching and returns.
-DEFAULT_BENCHMARK_DISPLAY = {
-    "US Equities": 25.0,                 # VUN
-    "US Small Cap Value": 8.0,           # AVUV
-    "International Small Cap Value": 8.0,# AVDV
-    "International Developed": 20.0,     # XEF
-    "Emerging Markets": 10.0,            # XEC
-    "Canada Equities": 29.0,             # XIC
-    "Canadian Bonds": 0.0,               # ZAG
-}
-
-# Defaults for 3 custom portfolios (show three editors)
-DEFAULT_CUSTOMS = [
-    {"SPY": 100.0},
-    {},
-    {},
-    {}
-]
 
 # Remove force-refresh and debug buttons — keep a single Update Chart button
 
@@ -364,6 +342,16 @@ except Exception:
 
 # Sidebar modeled after example.py (query-params enabled)
 with st.sidebar:
+    try:
+        from streamlit_extras.avatar import avatar
+    except ImportError:  # pragma: no cover - optional dependency fallback
+        avatar = None
+
+    try:
+        from streamlit_extras.buy_me_a_coffee import button
+    except ImportError:  # pragma: no cover - optional dependency fallback
+        button = None
+
     avatar_image = "avatar.jpeg"
     if avatar is not None:
         avatar(avatar_image, height=100, border=True,
@@ -395,7 +383,7 @@ with st.sidebar:
         bind="query-params",
     )
     selected_benchmarks = set(benchmarks_sel)
-    echarts_theme = "streamlit"
+    echarts_theme = "dark"
 
     # expose a small help block
     st.markdown("---")
@@ -406,9 +394,8 @@ with st.sidebar:
 
         pct = (current / target) * 100
 
-        # Detect Streamlit theme
-        bg = st.get_option("theme.backgroundColor")
-        text_color = st.get_option("theme.textColor")
+        # Use deterministic colors to avoid browser/theme mismatch.
+        text_color, _ = get_chart_theme_colors()
 
         option = {
             "title": {
@@ -484,11 +471,11 @@ with st.sidebar:
             current=12,
             target=5250,
             unit="hrs",
-            color="#2563EB",      # Blue
+            color="#60A5FA",      # Lighter blue for dark background contrast
             key="hours",
         )
         render_progress_gauge(
-            title="👥 Clients",
+            title="🧑 Clients",
             current=7,
             target=30,
             unit="clients",
@@ -870,9 +857,26 @@ else:
         # portfolio return calculations which still use the ticker maps).
         pie1 = DEFAULT_BENCHMARK_DISPLAY.copy()
         pie1_title = "Asset Allocation"
+        label_color, _ = get_chart_theme_colors()
+        pie_palette = [
+            "#60a5fa",
+            "#34d399",
+            "#fbbf24",
+            "#f472b6",
+            "#a78bfa",
+            "#f87171",
+            "#22d3ee",
+            "#f59e0b",
+        ]
 
         pie1_opts = {
-            "title": {"text": "Asset Allocation", "left": "center"},
+            "backgroundColor": "transparent",
+            "color": pie_palette,
+            "title": {
+                "text": "Asset Allocation",
+                "left": "center",
+                "textStyle": {"color": label_color},
+            },
             "tooltip": {"trigger": "item", "formatter": "{b}: {c} ({d}%)"},
             #"legend": {"bottom": "0"},
             "series": [
@@ -882,10 +886,14 @@ else:
                     "avoidLabelOverlap": True,
                     "itemStyle": {
                         "borderRadius": 10,
-                        "borderColor": "#fff",
+                        "borderColor": "rgba(15,23,42,0.7)",
                         "borderWidth": 2,
                     },
-                    "label": {"show": True, "formatter": "{b}: {d}%"},
+                    "label": {
+                        "show": True,
+                        "formatter": "{b}: {d}%",
+                        "color": label_color,
+                    },
                     "emphasis": {
                         "label": {"show": True, "fontSize": "14", "fontWeight": "bold"},
                         "itemStyle": {"shadowBlur": 10, "shadowOffsetX": 0, "shadowColor": "rgba(0, 0, 0, 0.5)"},
@@ -898,7 +906,7 @@ else:
         try:
             row1_left, row1_right = st.columns(2)
             with row1_left:
-                st_echarts(options=pie1_opts, height="450px", key="pie1", theme=echarts_theme)
+                st_echarts(options=pie1_opts, height="450px", key="pie1")
             with row1_right:
                 option = {
                     "title": {"text": "Sector Exposure", "left": "center"},
@@ -980,15 +988,10 @@ else:
                 st_echarts(options=options, height="500px")
             with row2_right:
                 label_color, grid_color = get_chart_theme_colors()
-                theme_is_dark = (
-                    "dark" in (st.get_option("theme.base") or "").lower()
-                    or "#000" in (st.get_option("theme.backgroundColor") or "").lower()
-                    or "#0" in (st.get_option("theme.backgroundColor") or "").lower()
-                )
-                radar_text_color = "#f8fafc" if label_color and "#" in label_color and label_color.lower() in {"#0f172a", "#111827", "#1f2937", "#111111", "#000000"} else (label_color or "#111827")
-                radar_panel_bg = "rgba(15,23,42,0.95)" if theme_is_dark else "rgba(255,255,255,0.98)"
-                radar_panel_text_color = "#f8fafc" if theme_is_dark else "#111827"
-                radar_split_area_colors = ["rgba(255,255,255,0.08)", "rgba(255,255,255,0.14)"] if theme_is_dark else ["rgba(15,23,42,0.04)", "rgba(15,23,42,0.08)"]
+                radar_text_color = label_color
+                radar_panel_bg = "rgba(15,23,42,0.95)"
+                radar_panel_text_color = "#f8fafc"
+                radar_split_area_colors = ["rgba(255,255,255,0.08)", "rgba(255,255,255,0.14)"]
                 radar_option = {
                     "backgroundColor": "transparent",
                     "title": {
@@ -1064,7 +1067,7 @@ else:
                         }
                     ],
                 }
-                st_echarts(radar_option, height="500px", theme=None)
+                st_echarts(radar_option, height="500px", theme="dark")
         except Exception:
             # fallback to plotly if echarts fails
             fig1 = px.pie(names=list(pie1.keys()), values=list(pie1.values()), title=pie1_title)
@@ -1146,10 +1149,10 @@ try:
         for year, block in zip(years, blocks)
     }
 
-    # Use Streamlit theme variables
-    border = "1px solid var(--border-color)"
-    header_text = "var(--text-color)"
-    header_bg = "var(--secondary-background-color)"
+    # Use explicit palette for reliable contrast in rendered HTML table.
+    border = "1px solid rgba(255,255,255,0.18)"
+    header_text = "#f1f5f9"
+    header_bg = "rgba(255,255,255,0.10)"
 
     th_style = (
         f"padding:2px 2px;"
@@ -1212,11 +1215,10 @@ try:
     st.markdown("---")
     st.header("⭐ Example Morning Star Equity Mix")
 
-    _base = (st.get_option("theme.base") or "light").lower()
-    _is_dark = "dark" in _base
-    hm_text = "#f1f5f9" if _is_dark else "#111827"
-    hm_grid = "rgba(255,255,255,0.18)" if _is_dark else "rgba(15,23,42,0.16)"
-    hm_echarts_theme = "dark" if _is_dark else None
+    hm_text = "#f1f5f9"
+    hm_cell_text = "#0f172a"
+    hm_grid = "rgba(255,255,255,0.18)"
+    hm_echarts_theme = "dark"
 
     style_box_opts = {
         "backgroundColor": "transparent",
@@ -1260,10 +1262,10 @@ try:
         "visualMap": {
             "type": "piecewise",
             "pieces": [
-                {"min": 0, "max": 10, "label": "0-10%"},
-                {"min": 10, "max": 25, "label": "10-25%"},
-                {"min": 25, "max": 50, "label": "25-50%"},
-                {"min": 50, "label": ">50%"},
+                {"min": 0, "max": 10, "label": "0-10%", "color": "#dbeafe"},
+                {"min": 10, "max": 25, "label": "10-25%", "color": "#93c5fd"},
+                {"min": 25, "max": 50, "label": "25-50%", "color": "#60a5fa"},
+                {"min": 50, "label": ">50%", "color": "#3b82f6"},
             ],
             "orient": "horizontal",
             "bottom": 0,
@@ -1277,7 +1279,15 @@ try:
                 [0, 2, 5],  [1, 2, 10], [2, 2, 0],
             ],
             "itemStyle": {"borderWidth": 2},
-            "label": {"show": True, "formatter": "{@[2]}%", "fontSize": 24, "fontWeight": "bold", "color": hm_text},
+            "label": {
+                "show": True,
+                "formatter": "{@[2]}%",
+                "fontSize": 24,
+                "fontWeight": "bold",
+                "color": hm_cell_text,
+                "textBorderColor": "rgba(241,245,249,0.95)",
+                "textBorderWidth": 2,
+            },
         }],
     }
 
