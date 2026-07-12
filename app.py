@@ -1111,13 +1111,13 @@ else:
 
             🧾 **Net line**: growth after fees and selected behavioural adjustments.
 
-                🔵 **Blue box - Scenario Controls**: tune return, fees, and starting investment.
+                🔵 Blue box - Scenario Controls: tune return, fees, and starting investment.
 
-                🟢 **Green box - Typical Assumptions**: quick ranges you can copy into the controls.
+                🟢 Green box - Typical Assumptions: quick ranges you can copy into the controls.
 
-                🟡 **Yellow box - Behavioural Adjustments**: turn on real-world frictions (they subtract from return).
+                🟡 Yellow box - Behavioural Adjustments: turn on real-world frictions (they subtract from return).
 
-                🔴 **Red box - Behavioural Examples**: reference ranges for common behavioural effects.
+                🔴 Red box - Behavioural Examples: reference ranges for common behavioural effects.
 
             💡 Pro tip: try one toggle at a time to see which friction hurts long-term compounding the most.
             """
@@ -1136,7 +1136,7 @@ else:
                 min_value=0.0,
                 max_value=15.0,
                 value=8.0,
-                step=0.5,
+                step=0.1,
                 format="%.1f%%",
                 key="fee_proj_gross_return",
             )
@@ -1175,12 +1175,12 @@ else:
             st.caption("Timeframe: 30 years")
 
         sample_rows = [
-            {"": "Annual Returns", "%": "4.0 - 12.0%"},
+            {"": "Annual Returns", "%": "4.0 - 12.0% (**7.12%** is typical"},
             {"": "Fund Fee or MER", "%": "0.1 - 1.0%"},
             {"": "Management Fee", "%": "0.5 - 1.0%"},
         ]
         sample_df = pd.DataFrame(sample_rows)
-        st.success("📌 Sample Typical Assumptions")
+        st.subheader("📌 Sample Typical Assumptions")
         st.table(sample_df, hide_header=True)
 
     with top_right:
@@ -1237,7 +1237,7 @@ else:
             {"Typical Case": "Asset Location (Efficent tax accounts)", "%": "-0.3 - 0.75%"},
         ]
         sample_df = pd.DataFrame(sample_rows)
-        st.error("🧪 Sample Behavioural Assumptions")
+        st.subheader("🧪 Sample Behavioural Assumptions")
         sample_df = sample_df.style.map(lambda x: "color: #ff4d4d;", subset=["%"])
         st.table(sample_df, hide_header=True)
 
