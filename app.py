@@ -64,12 +64,12 @@ FOURTH_BENCHMARK = {
 }
 
 BENCHMARK_CONFIG = [
-    ("Ken's Benchmark", "benchmark_returns_v1", DEFAULT_BENCHMARK),
+    ("100/0 Benchmark", "benchmark_returns_v1", DEFAULT_BENCHMARK),
     ("70/30 Benchmark", "benchmark_returns_v2", SECOND_BENCHMARK),
     ("50/50 Benchmark", "benchmark_returns_v3", THIRD_BENCHMARK),
     ("Tech Stocks", "benchmark_returns_v4", FOURTH_BENCHMARK),
 ]
-DEFAULT_BENCHMARK_SELECTION = ["Ken's Benchmark", "70/30 Benchmark", "50/50 Benchmark"]
+DEFAULT_BENCHMARK_SELECTION = ["100/0 Benchmark", "70/30 Benchmark", "50/50 Benchmark"]
 
 DEFAULT_BENCHMARK_DISPLAY = {
     "US Equities": 25.0,
@@ -234,7 +234,17 @@ def portfolio_editor(title, default_portfolio, key_prefix, max_rows=8, visible_r
     Uses plain text inputs for weights (integers) to avoid spinner controls and decimals.
     """
     # Render compact header; row count controlled by the global sidebar toggle
-    st.subheader(title)
+    header_map = {
+        "Custom Portfolio 1": (st.success, "🟢"),
+        "Custom Portfolio 2": (st.info, "🔵"),
+        "Custom Portfolio 3": (st.warning, "🟠"),
+        "Custom Portfolio 4": (st.error, "🔴"),
+    }
+    if title in header_map:
+        renderer, icon = header_map[title]
+        renderer(f"{icon} {title}")
+    else:
+        st.subheader(title)
     # use global session state checkbox to decide how many rows to show for all editors
     show_all = st.session_state.get("show_all_portfolios", False)
     rows_to_show = max_rows if show_all else visible_rows
@@ -401,7 +411,7 @@ with st.sidebar:
     )
 
     y_axis_mode = st.radio("Y-axis", ("Growth of $1", "Percent", "Value ($)"))
-    initial_investment = st.number_input("Initial investment ($)", min_value=1, value=1000, step=100)
+    initial_investment = st.number_input("Initial investment ($)", min_value=1, value=100_000, step=10_000)
     benchmarks_sel = st.multiselect(
         "Benchmarks",
         options=[label for label, _, _ in BENCHMARK_CONFIG],
@@ -541,7 +551,7 @@ custom_portfolios = {}
 
 for i in range(num_custom_portfolios):
     with cols[i]:
-        title = f"Custom {i + 1}"
+        title = f"Custom Portfolio {i + 1}"
         default = DEFAULT_CUSTOMS[i] if i < len(DEFAULT_CUSTOMS) else {}
 
         custom_portfolios[f"custom_{i}"] = portfolio_editor(
@@ -1086,6 +1096,258 @@ else:
                 st.write("Portfolio allocation comparison chart unavailable")
     except Exception:
         pass
+
+    # -----------------------------
+    # Fee impact projection (30-year fixed horizon)
+    # -----------------------------
+    st.markdown("---")
+    st.header("💸 Return vs Net Return (After Fees)")
+    with st.expander("🧠 What this section is showing", expanded=False):
+        st.markdown(
+            """
+            🎯 Think of this as your **30-year return simulator** with two tracks:
+
+            🚀 **Gross line**: growth before fees and behavioural drag.
+
+            🧾 **Net line**: growth after fees and selected behavioural adjustments.
+
+                🔵 **Blue box - Scenario Controls**: tune return, fees, and starting investment.
+
+                🟢 **Green box - Typical Assumptions**: quick ranges you can copy into the controls.
+
+                🟡 **Yellow box - Behavioural Adjustments**: turn on real-world frictions (they subtract from return).
+
+                🔴 **Red box - Behavioural Examples**: reference ranges for common behavioural effects.
+
+            💡 Pro tip: try one toggle at a time to see which friction hurts long-term compounding the most.
+            """
+        )
+
+    top_left, top_right = st.columns(2)
+
+    with top_left:
+        st.info("🎛️ Scenario Controls")
+
+        ctrl_a, ctrl_b = st.columns(2)
+
+        with ctrl_a:
+            gross_return_pct = st.slider(
+                "Annual Return (%)",
+                min_value=0.0,
+                max_value=15.0,
+                value=8.0,
+                step=0.5,
+                format="%.1f%%",
+                key="fee_proj_gross_return",
+            )
+
+        with ctrl_b:
+            fund_fee_pct = st.slider(
+                "Fund Fee or MER (%)",
+                min_value=0.0,
+                max_value=2.5,
+                value=1.0,
+                step=0.01,
+                format="%.2f%%",
+                key="fee_proj_fund_fee",
+            )
+
+        ctrl_c, ctrl_d = st.columns(2)
+        with ctrl_c:
+            mgmt_fee_pct = st.slider(
+                "Management Fee (%)",
+                min_value=0.0,
+                max_value=2.5,
+                value=1.0,
+                step=0.25,
+                format="%.2f%%",
+                key="fee_proj_mgmt_fee",
+            )
+
+        with ctrl_d:
+            fee_projection_initial = st.number_input(
+                "Starting investment ($)",
+                min_value=1,
+                value=int(initial_investment),
+                step=100_000,
+                key="fee_projection_initial",
+            )
+            st.caption("Timeframe: 30 years")
+
+        sample_rows = [
+            {"": "Annual Returns", "%": "4.0 - 12.0%"},
+            {"": "Fund Fee or MER", "%": "0.1 - 1.0%"},
+            {"": "Management Fee", "%": "0.5 - 1.0%"},
+        ]
+        sample_df = pd.DataFrame(sample_rows)
+        st.success("📌 Sample Typical Assumptions")
+        st.table(sample_df, hide_header=True)
+
+    with top_right:
+        st.warning("🧩 Behavioural Adjustments (toggle on to apply)")
+
+        behavior_defaults = {
+            "No Rebalancing": 0.25,
+            "Behavioural Gap": 1.5,
+            "Tax Optimization": 0.40,
+            "Asset Location": 0.50,
+        }
+
+        b1, b2 = st.columns(2)
+        with b1:
+            apply_no_rebal = st.checkbox(
+                f"No Rebalancing (-{behavior_defaults['No Rebalancing']:.2f}%)",
+                value=False,
+                key="behavior_no_rebal",
+            )
+            apply_tax_opt = st.checkbox(
+                f"Tax Optimization (-{behavior_defaults['Tax Optimization']:.2f}%)",
+                value=False,
+                key="behavior_tax_opt",
+            )
+        with b2:
+            apply_behavioral_gap = st.checkbox(
+                f"Behavioural Gap (-{behavior_defaults['Behavioural Gap']:.2f}%)",
+                value=False,
+                key="behavior_gap",
+            )
+            apply_asset_location = st.checkbox(
+                f"Asset Location (-{behavior_defaults['Asset Location']:.2f}%)",
+                value=False,
+                key="behavior_asset_loc",
+            )
+
+        behavior_drag_pct_total = (
+            (behavior_defaults["No Rebalancing"] if apply_no_rebal else 0.0)
+            + (behavior_defaults["Behavioural Gap"] if apply_behavioral_gap else 0.0)
+            + (behavior_defaults["Tax Optimization"] if apply_tax_opt else 0.0)
+            + (behavior_defaults["Asset Location"] if apply_asset_location else 0.0)
+        )
+        st.caption(f"🎯 Total behavioral adjustment applied: -{behavior_drag_pct_total:.2f}%")
+        if behavior_drag_pct_total > 0 and mgmt_fee_pct > 0:
+            st.warning(
+                "Heads up 👋 You currently have behavioural adjustments and a non-zero management fee turned on. "
+                "Some of that impact may overlap, so your net result could be a bit conservative."
+            )
+
+        sample_rows = [
+            {"Typical Case": "No Reblancing", "%": "-0.1 - 0.4%"},
+            {"Typical Case": "Behavioural Gap (Picking individual stocks)", "%": "-1.0 - 2.0%"},
+            {"Typical Case": "Tax Optimization (Tax Advice)", "%": "-0.3 - 0.6%"},
+            {"Typical Case": "Asset Location (Efficent tax accounts)", "%": "-0.3 - 0.75%"},
+        ]
+        sample_df = pd.DataFrame(sample_rows)
+        st.error("🧪 Sample Behavioural Assumptions")
+        sample_df = sample_df.style.map(lambda x: "color: #ff4d4d;", subset=["%"])
+        st.table(sample_df, hide_header=True)
+
+    st.divider()
+ 
+    projection_years = 30
+    timeline_years = list(range(0, projection_years + 1))
+
+    gross_rate = gross_return_pct / 100.0
+    behavior_drag_rate = behavior_drag_pct_total / 100.0
+    effective_gross_rate = max(gross_rate - behavior_drag_rate, -0.99)
+    fund_fee_rate = fund_fee_pct / 100.0
+    mgmt_fee_rate = mgmt_fee_pct / 100.0
+
+    fee_only_rate = ((1 + gross_rate) * (1 - fund_fee_rate) * (1 - mgmt_fee_rate) - 1)
+    net_rate = ((1 + effective_gross_rate) * (1 - fund_fee_rate) * (1 - mgmt_fee_rate) - 1)
+
+    baseline_curve_value = [float(fee_projection_initial) * ((1 + gross_rate) ** yr) for yr in timeline_years]
+    fee_only_curve_value = [float(fee_projection_initial) * ((1 + fee_only_rate) ** yr) for yr in timeline_years]
+    net_curve_value = [float(fee_projection_initial) * ((1 + net_rate) ** yr) for yr in timeline_years]
+
+    fee_fig = go.Figure()
+    fee_fig.add_trace(
+        go.Scatter(
+            x=timeline_years,
+            y=baseline_curve_value,
+            mode="lines",
+            name="Baseline gross (no fees, no behavioural drag)",
+            line=dict(width=4),
+            hovertemplate="Year %{x}: $%{y:,.2f}<extra></extra>",
+        )
+    )
+    fee_fig.add_trace(
+        go.Scatter(
+            x=timeline_years,
+            y=fee_only_curve_value,
+            mode="lines",
+            name="After fees only",
+            line=dict(width=4, dash="dot"),
+            hovertemplate="Year %{x}: $%{y:,.2f}<extra></extra>",
+        )
+    )
+    fee_fig.add_trace(
+        go.Scatter(
+            x=timeline_years,
+            y=net_curve_value,
+            mode="lines",
+            name="After fees + behavioural drag (all-in)",
+            line=dict(width=4, dash="dash"),
+            hovertemplate="Year %{x}: $%{y:,.2f}<extra></extra>",
+        )
+    )
+
+    fee_fig.update_layout(
+        xaxis_title="Year",
+        yaxis_title="Portfolio value ($)",
+        height=520,
+        hovermode="x unified",
+        template="plotly_white",
+        font=dict(size=16),
+        xaxis=dict(
+            showgrid=True,
+            gridcolor='rgba(200,200,200,0.25)',
+            gridwidth=1,
+            tickfont=dict(size=14),
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor='rgba(200,200,200,0.15)',
+            tickfont=dict(size=14),
+            tickformat=",.0f",
+            tickprefix="$",
+        ),
+    )
+
+    gross_end_value = float(fee_projection_initial) * ((1 + gross_rate) ** projection_years)
+    fee_only_end_value = float(fee_projection_initial) * ((1 + fee_only_rate) ** projection_years)
+    net_end_value = float(fee_projection_initial) * ((1 + net_rate) ** projection_years)
+
+    fee_cost_value = gross_end_value - fee_only_end_value
+    behavioral_opp_cost_value = fee_only_end_value - net_end_value
+    total_drag_value = gross_end_value - net_end_value
+
+    gross_app_pct = (gross_end_value / float(fee_projection_initial) - 1.0) * 100.0
+    net_app_pct = (net_end_value / float(fee_projection_initial) - 1.0) * 100.0
+    fee_cost_pct = (fee_only_end_value / gross_end_value - 1.0) * 100.0 if gross_end_value != 0 else 0.0
+    behavioral_opp_cost_pct = (net_end_value / fee_only_end_value - 1.0) * 100.0 if fee_only_end_value != 0 else 0.0
+    total_drag_pct = (net_end_value / gross_end_value - 1.0) * 100.0 if gross_end_value != 0 else 0.0
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+
+    c1.metric("Ending value (gross)", f"${gross_end_value:,.2f}", delta=f"{gross_app_pct:.2f}%")
+    c2.metric("Ending value (net)", f"${net_end_value:,.2f}", delta=f"{net_app_pct:.2f}%")
+    c3.metric(
+        "Lost to fund + management fees",
+        f"${fee_cost_value:,.2f}",
+        delta=f"{fee_cost_pct:.2f}% vs no-fee baseline"
+    )
+    c4.metric(
+        "Additional loss from behavioural drag",
+        f"${behavioral_opp_cost_value:,.2f}",
+        delta=f"{behavioral_opp_cost_pct:.2f}% vs fees-only"
+    )
+    # c5.metric(
+    #     "Total loss vs no-friction baseline",
+    #     f"${total_drag_value:,.2f}",
+    #     delta=f"{total_drag_pct:.2f}% vs baseline"
+    # )
+
+    st.plotly_chart(fee_fig, use_container_width=True)
 
 # -----------------------------
 # Bottom: Top Countries by Rank table
