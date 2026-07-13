@@ -850,10 +850,10 @@ with main_tab:
     for i in range(num_custom_portfolios):
         with cols[i]:
             custom_titles = [
-                "🟢 Custom Portfolio 1",
-                "🔵 Custom Portfolio 2",
-                "🟠 Custom Portfolio 3",
-                "🔴 Custom Portfolio 4",
+                "🟢 Portfolio 1",
+                "🔵 Portfolio 2",
+                "🟠 Portfolio 3",
+                "🔴 Portfolio 4",
             ]
             title = custom_titles[i] if i < len(custom_titles) else f"Custom Portfolio {i + 1}"
             default = DEFAULT_CUSTOMS[i] if i < len(DEFAULT_CUSTOMS) else {}
