@@ -1170,7 +1170,6 @@ with main_tab:
                 # Variance: average of year-over-year variance with 10-year trend
                 try:
                     var_text = "N/A"
-                    var_delta_text = None
                     variance_spark_10 = None
                     if raw_series is not None and not raw_series.empty:
                         rets = raw_series.pct_change().dropna()
@@ -1180,13 +1179,11 @@ with main_tab:
                             if not yearly_variance.empty:
                                 avg_variance = yearly_variance.mean()
                                 var_text = f"{avg_variance:.1f}%"
-                                var_delta_text = f"+{avg_variance:.1f}%"
                                 variance_spark_10 = [round(v, 1) for v in yearly_variance.tail(10).tolist()]
 
                     col.metric(
                         "Avg. Variance",
                         var_text,
-                        delta=var_delta_text,
                         border=True,
                         chart_data=variance_spark_10,
                         chart_type="area",
