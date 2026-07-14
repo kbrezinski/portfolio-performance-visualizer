@@ -1,6 +1,7 @@
 import streamlit as st
-# Google Analytics 4 bootstrap for website traffic tracking.
-import streamlit.components.v1 as components
+
+from streamlit_gtag import st_gtag
+
 # set wide layout, page icon and small CSS to increase usable width
 st.set_page_config(
     page_title="Stock peer analysis dashboard",
@@ -9,27 +10,14 @@ st.set_page_config(
 )
 
 GA_MEASUREMENT_ID = "G-CTKS1CMJH3"
-GA_STREAM_ID = "15246522451"
 
-
-def inject_google_analytics(measurement_id):
-        ga_html = f"""
-        <script async src="https://www.googletagmanager.com/gtag/js?id={measurement_id}"></script>
-        <script>
-            window.dataLayer = window.dataLayer || [];
-            function gtag(){{dataLayer.push(arguments);}}
-            gtag('js', new Date());
-            gtag('config', '{measurement_id}', {{
-                'send_page_view': true
-            }});
-        </script>
-        """
-        components.html(ga_html, height=0)
-
-
-if not st.session_state.get("ga_initialized", False):
-        inject_google_analytics(GA_MEASUREMENT_ID)
-        st.session_state["ga_initialized"] = True
+# Initialize Google Analytics
+st_gtag(
+    gtag_id="GA_MEASUREMENT_ID",
+    config={
+        "send_page_view": True
+    }
+)
 
 import plotly.graph_objects as go
 import plotly.express as px
