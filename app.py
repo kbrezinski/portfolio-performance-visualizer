@@ -23,6 +23,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 from datetime import datetime, timedelta
+from urllib.parse import urlencode
 import time
 import yfinance as yf
 from streamlit_echarts import st_echarts, JsCode
@@ -139,6 +140,39 @@ PROGRESS_GAUGES = [
 def get_chart_theme_colors():
     """Return deterministic chart colors for the forced-dark app theme."""
     return "#f1f5f9", "rgba(255,255,255,0.18)"
+
+
+def build_portfolio_visualizer_url(portfolio):
+    """Build a Portfolio Visualizer backtest URL from a ticker->weight mapping."""
+    if not portfolio:
+        return None
+
+    valid_items = [(ticker, weight) for ticker, weight in portfolio.items() if ticker and weight > 0]
+    if not valid_items:
+        return None
+
+    tickers = [ticker for ticker, _ in valid_items]
+    weights = [float(weight) for _, weight in valid_items]
+    total_weight = sum(weights)
+    if total_weight <= 0:
+        return None
+
+    # Normalize so allocations are always valid for external backtest params.
+    normalized_weights = [round((weight / total_weight) * 100.0, 2) for weight in weights]
+
+    params = {
+        "s": "y",
+        "initialAmount": 10000,
+        "startYear": 1985,
+        "benchmark": -1,
+        "showYield": "true",
+    }
+
+    for i, (ticker, weight) in enumerate(zip(tickers, normalized_weights), start=1):
+        params[f"symbol{i}"] = ticker
+        params[f"allocation{i}_1"] = weight
+
+    return "https://www.portfoliovisualizer.com/backtest-portfolio?" + urlencode(params)
 
 
 @st.cache_data(ttl=3600)
@@ -309,8 +343,13 @@ def portfolio_editor(title, default_portfolio, key_prefix, max_rows=8, visible_r
 
     if total_weight == 0:
         st.warning("Portfolio has no weights.")
-    elif abs(total_weight - 100.0) > 0.5:
-        st.warning("Weights do not add to 100%. They will be normalized automatically.")
+    else:
+        visualizer_url = build_portfolio_visualizer_url(portfolio)
+        if visualizer_url:
+            st.link_button("🔗 Open in Portfolio Visualizer", visualizer_url, use_container_width=True)
+
+        if abs(total_weight - 100.0) > 0.5:
+            st.warning("Weights do not add to 100%. They will be normalized automatically.")
 
     return portfolio
 
@@ -803,7 +842,7 @@ with references_tab:
     st.header("🧮 Useful Tools")
     st.markdown(
         """
-        - [Rent Vs Buy (PWL Capital)](hhttps://research-tools.pwlcapital.com/research/rent-vs-buy)
+        - [Rent Vs Buy (PWL Capital)](https://research-tools.pwlcapital.com/research/rent-vs-buy)
         - [🐐 Portfolio Rebalancer (Passiv)](https://app.passiv.com/login?next=%2Freporting)
         """
     )
@@ -814,24 +853,7 @@ with references_tab:
 with main_tab:
     st.header("📋 Portfolio Configuration")
 
-    with st.expander("📚 New here? Here's how to build your portfolio!", expanded=False):
-        st.markdown(
-            """
-            💼 **Step 1:** Enter a stock or ETF ticker in each **Symbol** field (e.g. `AAPL`, `MSFT`, `TSLA`, `VOO`).
-
-            📊 **Step 2:** Assign a percentage weight to each holding. Don't worry if the total isn't exactly **100%**—the app will automatically normalize your portfolio. 
-            
-            🏛️ **SPY is included by default as a benchmark-style holding representing the S&P 500 Index**, giving you a familiar market reference point.
-
-            ➕ **Need more holdings?** Click the button below to add additional rows and build a more diversified portfolio.
-
-            🔍 **Can't remember a ticker?** Look it up on **Yahoo Finance**, **Google Finance**, your brokerage platform, or the **Nasdaq** website.
-
-            🚀 That's it! Once your portfolio is entered, the dashboard will generate analytics, diversification metrics, charts, and insights automatically.
-            """
-        )
-
-    cols = st.columns([1.5, 1.5, 1.5, 1.5, 3])
+    cols = st.columns([1.2, 1.2, 1.2, 1.2, 3.2])
 
     custom_portfolios = {}
 
@@ -852,10 +874,32 @@ with main_tab:
                 f"custom_{i}"
             )
 
+    with cols[4]:
+        st.markdown("## 🎉 Build Your Portfolio Like a Pro")
+        st.success("✨ Quick playbook: add symbols, set weights, and launch your visualizer link.")
+        st.markdown(
+            """
+            ### 🧭 How to use this page
+
+            💼 **Step 1:** Add ticker symbols and % weights in each custom portfolio.
+
+            🇨🇦 **Step 2:** If a symbol fails, try adding `.TO` (example: `VUN.TO`).
+
+            🧩 **Step 3:** Need more holdings? Click **Show all rows for portfolios** to expand from 4 to 8 rows.
+
+            🔗 **Step 4:** Once a portfolio has weights, click **Open in Portfolio Visualizer** to test that mix on the external site.
+
+            🚀 **Step 5:** Click **Update Portfolio Charts** to refresh all charts and metrics.
+            """
+        )
+        st.warning("🎯 Friendly reminder: weights are auto-normalized, so they do not have to total exactly 100%.")
+
     if not st.session_state.get("show_all_portfolios", False):
-        if st.button("🧩 Show all rows for portfolios (expand to 8)", key="expand_portfolios_main", use_container_width=True, type="secondary"):
-            st.session_state["show_all_portfolios"] = True
-            st.rerun()
+        button_left, button_right = st.columns([4.8, 3.2])
+        with button_left:
+            if st.button("🧩 Show all rows for portfolios (expand to 8)", key="expand_portfolios_main", use_container_width=True, type="secondary"):
+                st.session_state["show_all_portfolios"] = True
+                st.rerun()
 
 
 with main_tab:
@@ -865,22 +909,25 @@ with main_tab:
     st.markdown("---")
     st.header("📈 Portfolio Performance Comparison")
 
-    with st.expander("📈 How to explore your portfolio charts", expanded=False):
+    perf_left, perf_right = st.columns([2, 1])
+
+    with perf_right:
+        st.markdown("## 🧠 Chart Game Plan")
+        st.success("📊 Pick your view, compare like a detective, then update to lock in changes.")
         st.markdown(
             """
-            🗓️ **Choose a time period** using the **left sidebar** to view your portfolio over popular investment horizons.
+            🗓️ **Time horizon:** change it in the sidebar to zoom in or out.
 
-            📊 **Change the Y-axis** to display performance as **Growth**, **Percent Return**, or **Portfolio Value**, depending on how you'd like to analyze your results.
+            🎛️ **Y-axis mode:** switch between **Growth**, **Percent**, and **Value ($)**.
 
-            ⚖️ **Compare against benchmarks** by selecting one or more benchmark portfolios to see how your portfolio has performed relative to them.
+            ⚖️ **Benchmarks:** select one or more to compare against your custom mixes.
 
-            🔴 **Made changes?** After updating your selections, click the **red "Update Chart"** button to refresh the charts and apply your new settings.
+            🖱️ **Hover mode:** move your cursor over the chart to compare all lines on the same date.
 
-            🔍 **Hover over the charts** to see detailed values for any date and compare performance across all selected portfolios.
-
-            💡 Experiment with different time horizons, chart views, and benchmarks to gain new insights into your portfolio!
+            🚀 **After edits:** click **Update Portfolio Charts** to refresh the chart and metrics.
             """
         )
+        st.warning("✨ Pro tip: try a short horizon first, then expand to 5Y or 10Y for bigger trend context.")
 
     if "benchmark_returns" not in st.session_state:
         st.session_state.benchmark_returns = None
@@ -889,11 +936,8 @@ with main_tab:
         # store as dict keyed by custom portfolio id (custom_0, custom_1, ...)
         st.session_state.custom_returns = {}
 
-    st.info("📌 After changing tickers, weights, benchmarks, or chart settings, click **Update Portfolio Charts** below.")
-
-    left, center, right = st.columns([1, 2, 1])
-
-    with center:
+    with perf_left:
+        st.info("📌 After changing tickers, weights, benchmarks, or chart settings, click **Update Portfolio Charts** below.")
         run_update = st.button(
             "🚀 Update Portfolio Charts ⭐",
             type="primary",
@@ -1038,7 +1082,8 @@ with main_tab:
 
     # If nothing plotted, show warning
     if not plotted:
-        st.warning("No data available. Check your ticker symbols and try again.")
+        with perf_left:
+            st.warning("No data available. Check your ticker symbols and try again.")
     else:
         yaxis_title = ""
         if y_axis_mode == "Growth of $1":
@@ -1072,24 +1117,25 @@ with main_tab:
             )
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        with perf_left:
+            st.plotly_chart(fig, use_container_width=True)
 
-        # Render custom HTML legend for plotted traces just under the plot
-        html = '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px">'
-        for name, color, *_ in plotted:
-            entry = (
-                f"<div style='display:flex;align-items:center;gap:8px;'>"
-                f"<div style='width:40px;height:12px;border-top:3px solid {color};margin-right:8px;'></div>"
-                    f"<div style='font-size:16px;font-weight:600'>{name}</div>"
-                f"</div>"
-            )
-            html += entry
-        html += '</div>'
-        st.markdown(html, unsafe_allow_html=True)
+            # Render custom HTML legend for plotted traces just under the plot
+            html = '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px">'
+            for name, color, *_ in plotted:
+                entry = (
+                    f"<div style='display:flex;align-items:center;gap:8px;'>"
+                    f"<div style='width:40px;height:12px;border-top:3px solid {color};margin-right:8px;'></div>"
+                        f"<div style='font-size:16px;font-weight:600'>{name}</div>"
+                    f"</div>"
+                )
+                html += entry
+            html += '</div>'
+            st.markdown(html, unsafe_allow_html=True)
 
-        # Add a clean divider and spacing between legend and metric table
-        st.markdown("<hr style='margin-top:18px;margin-bottom:8px'>", unsafe_allow_html=True)
-        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+            # Add a clean divider and spacing between legend and metric table
+            st.markdown("<hr style='margin-top:18px;margin-bottom:8px'>", unsafe_allow_html=True)
+            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
         # Render per-plot metrics using Streamlit `metric` components in columns
         try:
@@ -1119,45 +1165,91 @@ with main_tab:
                     final_display = "N/A"
 
                 delta_text = f"{total_pct:.2f}%" if total_pct is not None else None
-                col.metric("Final", final_display, delta=delta_text)
+                col.metric("Final", final_display, delta=delta_text, border=True)
 
-                # Variance of period returns (use raw_series pct_change)
+                # Variance: average of year-over-year variance with 10-year trend
                 try:
                     var_text = "N/A"
+                    var_delta_text = None
+                    variance_spark_10 = None
                     if raw_series is not None and not raw_series.empty:
                         rets = raw_series.pct_change().dropna()
                         if not rets.empty:
-                            var_percent = (rets * 100).var()
-                            var_text = f"{var_percent:.1f}%"
-                    col.metric("Variance", var_text)
+                            # Year-over-year variance based on the full fetched return history.
+                            yearly_variance = (rets * 100).groupby(rets.index.year).var().dropna()
+                            if not yearly_variance.empty:
+                                avg_variance = yearly_variance.mean()
+                                var_text = f"{avg_variance:.1f}%"
+                                var_delta_text = f"+{avg_variance:.1f}%"
+                                variance_spark_10 = [round(v, 1) for v in yearly_variance.tail(10).tolist()]
+
+                    col.metric(
+                        "Avg. Variance",
+                        var_text,
+                        delta=var_delta_text,
+                        border=True,
+                        chart_data=variance_spark_10,
+                        chart_type="area",
+                    )
                 except Exception:
-                    col.metric("Variance", "N/A")
+                    col.metric("Avg. Variance", "N/A", border=True)
 
                 # Best calendar-year performance (above worst)
                 try:
-                    best_text = "N/A"
+                    best_year_value = "N/A"
+                    best_delta_text = None
+                    yearly_spark_10 = None
                     if raw_series is not None and not raw_series.empty:
                         yearly = raw_series.groupby(raw_series.index.year).apply(lambda s: float(s.iloc[-1]) / float(s.iloc[0]) - 1.0)
                         if not yearly.empty:
                             best_year = yearly.idxmax()
                             best_val = yearly.max() * 100.0
-                            best_text = f"{best_val:.1f}% ({best_year})"
-                    col.metric("Best Year", best_text)
-                except Exception:
-                    col.metric("Best Year", "N/A")
+                            best_year_value = str(int(best_year))
+                            best_delta_text = f"{best_val:+.1f}%"
 
-                # Worst calendar-year performance
+                            # Show the full fetched history trend as 10 yearly values.
+                            yearly_spark_10 = [round(v, 1) for v in (yearly * 100.0).tail(10).tolist()]
+
+                    col.metric(
+                        "Best Year",
+                        best_year_value,
+                        delta=best_delta_text,
+                        border=True,
+                        chart_data=yearly_spark_10,
+                        chart_type="bar",
+                    )
+                except Exception:
+                    col.metric("Best Year", "N/A", border=True)
+
+                # Worst drawdown year (yearly returns capped at 0)
                 try:
-                    worst_text = "N/A"
+                    worst_drawdown_year = "N/A"
+                    worst_drawdown_delta = None
+                    drawdown_spark_10 = None
                     if raw_series is not None and not raw_series.empty:
                         yearly = raw_series.groupby(raw_series.index.year).apply(lambda s: float(s.iloc[-1]) / float(s.iloc[0]) - 1.0)
                         if not yearly.empty:
-                            worst_year = yearly.idxmin()
-                            worst_val = yearly.min() * 100.0
-                            worst_text = f"{worst_val:.1f}% ({worst_year})"
-                    col.metric("Worst Year", worst_text)
+                            # Positive years are 0 drawdown; negatives remain negative.
+                            yearly_drawdown = yearly.apply(lambda r: min(r, 0.0))
+
+                            worst_year = yearly_drawdown.idxmin()
+                            worst_val = yearly_drawdown.min() * 100.0
+                            worst_drawdown_year = str(int(worst_year))
+
+                            # Keep a negative sign (including -0.0%) to preserve red delta styling intent.
+                            worst_drawdown_delta = f"-{abs(worst_val):.1f}%"
+                            drawdown_spark_10 = [round(v, 1) for v in (yearly_drawdown * 100.0).tail(10).tolist()]
+
+                    col.metric(
+                        "Worst Drawdown Year",
+                        worst_drawdown_year,
+                        delta=worst_drawdown_delta,
+                        border=True,
+                        chart_data=drawdown_spark_10,
+                        chart_type="area",
+                    )
                 except Exception:
-                    col.metric("Worst Year", "N/A")
+                    col.metric("Worst Drawdown Year", "N/A", border=True)
         except Exception:
             # fail silently if stats rendering errors
             pass
