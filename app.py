@@ -13,7 +13,7 @@ GA_MEASUREMENT_ID = "G-CTKS1CMJH3"
 
 # Initialize Google Analytics
 st_gtag(
-    gtag_id="GA_MEASUREMENT_ID",
+    gtag_id=GA_MEASUREMENT_ID,
     config={
         "send_page_view": True
     }
